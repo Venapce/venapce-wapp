@@ -1,0 +1,32 @@
+{
+  "name": "venapce-wapp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Venapce dashboard/chart builder — a headless Vue front that renders Superset data natively (no iframe). Seed for the Venapce main menu.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "echarts": "^5.5.1",
+    "grid-layout-plus": "^1.1.1",
+    "pinia": "^2.2.4",
+    "vue": "^3.5.12",
+    "vue-echarts": "^7.0.3",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@vitejs/plugin-vue": "^5.1.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.9",
+    "vue-tsc": "^2.1.6"
+  }
+}

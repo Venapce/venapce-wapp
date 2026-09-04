@@ -1,0 +1,143 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Venapce design system
+  ---------------------
+  Semantic tokens as runtime CSS variables (adopted from FloMorphic) so the same
+  utility — bg-surface, text-fg, border-line — is correct in light and dark. Dark
+  mode is a `.dark` class on <html> (see stores/ui.ts), falling back to the OS
+  preference on first visit. The accent stays Venapce's "synapse" teal.
+*/
+
+:root {
+  --bg: #f7f7f9;
+  --surface: #ffffff;
+  --surface-2: #f3f3f6;
+  --elevated: #ffffff;
+
+  --fg: #0b0a10;
+  --fg-muted: #5c5566;
+  --fg-subtle: #8b8595;
+
+  --line: #e6e5ea;
+  --line-strong: #d6d5db;
+
+  /* Brand accent — synapse teal */
+  --accent: #0891b2;
+  --accent-hover: #0e7490;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(8, 145, 178, 0.1);
+  --accent-border: rgba(8, 145, 178, 0.4);
+
+  --success: #16a34a;
+  --success-soft: rgba(22, 163, 74, 0.1);
+  --warning: #b45309;
+  --warning-soft: rgba(180, 83, 9, 0.12);
+  --danger: #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.1);
+
+  --shadow-sm: 0 1px 2px rgba(16, 12, 24, 0.06);
+  --shadow-md: 0 4px 14px rgba(16, 12, 24, 0.1);
+
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0d0e13;
+  --surface: #16171d;
+  --surface-2: #1c1e26;
+  --elevated: #20222b;
+
+  --fg: #f2f2f5;
+  --fg-muted: #9ca0ac;
+  --fg-subtle: #6c707c;
+
+  --line: #2a2c36;
+  --line-strong: #383b47;
+
+  --accent: #22d3ee;
+  --accent-hover: #67e8f9;
+  --accent-fg: #071318;
+  --accent-soft: rgba(34, 211, 238, 0.14);
+  --accent-border: rgba(34, 211, 238, 0.45);
+
+  --success: #4ade80;
+  --success-soft: rgba(74, 222, 128, 0.14);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.14);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.14);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.4);
+
+  color-scheme: dark;
+}
+
+@layer base {
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    @apply antialiased;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--fg-subtle);
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium
+      transition-colors focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-accent-fg hover:bg-accent-hover;
+  }
+  .btn-ghost {
+    @apply btn text-fg-muted hover:bg-accent-soft hover:text-fg;
+  }
+  .btn-outline {
+    @apply btn border border-line-strong bg-surface text-fg-muted hover:border-accent-border hover:text-accent;
+  }
+  .field {
+    @apply w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-fg
+      outline-none transition-colors placeholder:text-fg-subtle focus:border-accent;
+  }
+  .field:focus {
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .label {
+    @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-fg-muted;
+  }
+  .card {
+    @apply rounded-lg border border-line bg-surface;
+    box-shadow: var(--shadow-sm);
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full bg-accent-soft px-2.5 py-1 text-xs
+      font-medium text-accent;
+  }
+}

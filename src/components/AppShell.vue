@@ -1,0 +1,213 @@
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+import { RouterLink, RouterView, useRouter } from 'vue-router'
+import { useConnectionStore } from '@/stores/connection'
+import { useIssueViewsStore } from '@/stores/issueViews'
+import ThemeToggle from '@/components/ThemeToggle.vue'
+import IssueViewDialog from '@/components/IssueViewDialog.vue'
+import type { IssueView } from '@/api/types'
+
+const conn = useConnectionStore()
+const views = useIssueViewsStore()
+const router = useRouter()
+
+// The dashboard workspace — everything here feeds building & viewing dashboards.
+const dashboardNav = [
+  { name: 'dashboards', label: 'Visualizations', icon: '▦' },
+  { name: 'builder', label: 'Chart Builder', icon: '◧' },
+  { name: 'datasets', label: 'Datasets', icon: '▤' },
+]
+
+// Nodes (osctrl): enrolled systems and how to enroll new ones.
+const nodesNav = [
+  { name: 'nodes', label: 'Enrolled Nodes', icon: '🖥' },
+  { name: 'nodes-enroll', label: 'Enroll', icon: '＋' },
+]
+
+// The add/edit saved-view dialog.
+const dialogOpen = ref(false)
+const editing = ref<IssueView | null>(null)
+
+function openNewView() {
+  editing.value = null
+  dialogOpen.value = true
+}
+function openEditView(v: IssueView) {
+  editing.value = v
+  dialogOpen.value = true
+}
+function saveView(payload: { name: string; tags: string[]; match: 'any' | 'all' }) {
+  if (editing.value) {
+    views.update(editing.value.id, payload)
+  } else {
+    const created = views.add(payload)
+    router.push({ name: 'issues-view', params: { viewId: created.id } })
+  }
+  dialogOpen.value = false
+}
+function deleteView(v: IssueView) {
+  views.remove(v.id)
+  if (router.currentRoute.value.params.viewId === v.id) router.push({ name: 'issues' })
+}
+
+const host = computed(() => {
+  try {
+    return new URL(conn.supersetUrl).host
+  } catch {
+    return conn.supersetUrl || 'not configured'
+  }
+})
+
+const statusColor = computed(() => {
+  if (!conn.configured) return 'bg-fg-subtle'
+  if (conn.connected === false) return 'bg-danger'
+  return 'bg-success'
+})
+
+onMounted(() => views.load())
+</script>
+
+<template>
+  <div class="flex h-full flex-col bg-bg">
+    <!-- Global top bar — brand left, theme selector top-right -->
+    <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-4">
+      <RouterLink :to="{ name: 'dashboards' }" class="flex items-center gap-2.5">
+        <span class="grid h-8 w-8 place-items-center rounded-md bg-accent font-bold text-accent-fg">V</span>
+        <div class="leading-none">
+          <span class="text-[15px] font-bold tracking-tight text-fg">Venapce Posture Presentation</span>
+        </div>
+      </RouterLink>
+
+      <div class="flex items-center gap-2">
+        <ThemeToggle />
+      </div>
+    </header>
+
+    <div class="flex min-h-0 flex-1">
+      <!-- Sidebar — the main menu -->
+      <aside class="flex w-56 shrink-0 flex-col border-r border-line bg-surface">
+        <nav class="flex-1 overflow-y-auto px-2.5 py-3">
+          <!-- Dashboards -->
+          <p class="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
+            Dashboards
+          </p>
+          <RouterLink
+            v-for="item in dashboardNav"
+            :key="item.name"
+            :to="{ name: item.name }"
+            class="nav-item"
+            active-class="is-active"
+          >
+            <span class="w-4 text-center text-base">{{ item.icon }}</span>
+            {{ item.label }}
+          </RouterLink>
+
+          <!-- Nodes -->
+          <p class="mt-4 px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
+            Nodes
+          </p>
+          <RouterLink
+            v-for="item in nodesNav"
+            :key="item.name"
+            :to="{ name: item.name }"
+            class="nav-item"
+            active-class="is-active"
+          >
+            <span class="w-4 text-center text-base">{{ item.icon }}</span>
+            {{ item.label }}
+          </RouterLink>
+
+          <!-- Pipeline: Stage → Issues -->
+          <p class="mt-4 px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
+            Issues
+          </p>
+          <RouterLink :to="{ name: 'stage' }" class="nav-item" active-class="is-active">
+            <span class="w-4 text-center text-base">⇥</span>
+            Stage
+          </RouterLink>
+          <RouterLink :to="{ name: 'issues' }" class="nav-item" active-class="is-active">
+            <span class="w-4 text-center text-base">◈</span>
+            Issues
+          </RouterLink>
+
+          <!-- Saved issue sub-views (tag filters) -->
+          <div class="mt-0.5 space-y-0.5 pl-4">
+            <div
+              v-for="v in views.views"
+              :key="v.id"
+              class="group flex items-center rounded-lg pr-1 hover:bg-accent-soft"
+            >
+              <RouterLink
+                :to="{ name: 'issues-view', params: { viewId: v.id } }"
+                class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-fg-muted"
+                active-class="text-accent"
+              >
+                <span class="text-fg-subtle">#</span>
+                <span class="truncate">{{ v.name }}</span>
+              </RouterLink>
+              <button
+                class="hidden shrink-0 px-1 text-xs text-fg-subtle hover:text-accent group-hover:block"
+                title="Edit view"
+                @click.prevent="openEditView(v)"
+              >
+                ✎
+              </button>
+              <button
+                class="hidden shrink-0 px-1 text-xs text-fg-subtle hover:text-danger group-hover:block"
+                title="Delete view"
+                @click.prevent="deleteView(v)"
+              >
+                ✕
+              </button>
+            </div>
+            <button
+              class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-fg-subtle hover:bg-accent-soft hover:text-accent"
+              @click="openNewView"
+            >
+              <span class="text-base leading-none">＋</span>
+              Add view
+            </button>
+          </div>
+        </nav>
+
+        <!-- Settings, pinned to the bottom -->
+        <div class="border-t border-line p-2.5">
+          <RouterLink :to="{ name: 'settings' }" class="nav-item" active-class="is-active">
+            <span class="w-4 text-center text-base">⚙</span>
+            Settings
+          </RouterLink>
+          <RouterLink
+            :to="{ name: 'settings' }"
+            class="mt-1 block rounded-lg px-2.5 py-2 text-xs hover:bg-accent-soft"
+            title="Superset connection"
+          >
+            <div class="flex items-center gap-2">
+              <span class="h-2 w-2 rounded-full" :class="statusColor"></span>
+              <span class="truncate text-fg-muted" :title="conn.supersetUrl">Superset · {{ host }}</span>
+            </div>
+            <div class="pl-4 text-[11px] text-fg-subtle">
+              {{ conn.configured ? conn.username : 'not configured' }}
+            </div>
+          </RouterLink>
+        </div>
+      </aside>
+
+      <!-- Content -->
+      <main class="min-w-0 flex-1 overflow-auto">
+        <RouterView />
+      </main>
+    </div>
+
+    <IssueViewDialog :open="dialogOpen" :editing="editing" @save="saveView" @close="dialogOpen = false" />
+  </div>
+</template>
+
+<style scoped>
+.nav-item {
+  @apply mb-0.5 flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-fg-muted transition-colors hover:bg-accent-soft hover:text-fg;
+}
+.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+</style>
