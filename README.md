@@ -1,38 +1,53 @@
-# Venapce · Dashboard Builder (sample front)
+# Venapce · Web App (`venapce-wapp`)
 
-A **headless** Vue 3 front that renders **Superset data natively** — Apache ECharts
-via `vue-echarts`, **no iframe, no embedded SDK**. It's the proof-of-concept for the
-Venapce dashboard/chart builder and the seed of the future Venapce main menu.
+The **Vue 3 panel** for [Venapce](https://inflowenger.com/venapce) — the *face* of the
+system. Fleet view, security posture, the issue pipeline, and a native BI surface, all
+in one app. It renders **Superset data natively** — Apache ECharts via `vue-echarts`,
+**no iframe, no embedded SDK** — and reads everything else (nodes, stage, issues) from
+the Venapce backend.
 
-> Companion to [`../aio-superset/SUPERSET-INTEGRATION-STUDY.md`](../aio-superset/SUPERSET-INTEGRATION-STUDY.md).
-> This sample implements **reuse strategy A** ("Superset for data, our ECharts for
-> pixels") and the **`POST /api/v1/chart/data`** path described there.
+> Venapce is built the **FloMorphic way**: all business logic lives in
+> [FloMorphic](https://inflowenger.com/flomorphic) workflows, and this app is only the
+> view over the data those workflows produce. Background:
+> [the write-up](https://inflowenger.com/blog/venapce-a-nervous-system-for-security) ·
+> [product page](https://inflowenger.com/venapce).
 
 ## Stack
 
-Vue 3.5 · Vite · TypeScript · Vue Router · Pinia · Tailwind CSS · `echarts` + `vue-echarts` · axios.
+Vue 3.5 · Vite · TypeScript · Vue Router · Pinia · Tailwind CSS ·
+`echarts` + `vue-echarts` · `grid-layout-plus` · axios.
 
-## Architecture note
+## Architecture
 
-The browser no longer talks to Superset directly. It talks to the **Venapce
-backend** (`../venapce-api`, Go + Fiber + Postgres), which holds the Superset
-service account and proxies Superset's data endpoints. The old "Connect to
-Superset" login is gone — Superset is configured once in **Settings** and the
-token never reaches the browser (integration study §4). Set
-`VITE_VENAPCE_API_URL` to point at the backend (default `http://localhost:8091`).
+The browser talks to **one** service: the **Venapce backend** (`venapce-api`, Go + Fiber
++ Postgres). The backend holds the Superset and osctrl service accounts and proxies their
+data endpoints, so **no upstream token ever reaches the browser**. Connections are
+configured once in **Settings**; point the app at the backend with `VITE_VENAPCE_API_URL`
+(default `http://localhost:8091`).
 
-## What it does
+```
+Senses (osquery agents, plugins)  →  FloMorphic workflows  →  Venapce backend  →  this app
+        raw data frames               correlate & evaluate      proxy + native tables    the view
+```
 
-| Page | What it shows |
+## The main menu
+
+| Area | What it shows |
 |------|----------------|
-| **Settings** | Enter the Superset URL + credentials → saved & encrypted by the backend, which probes the login |
-| **Chart Builder** ⭐ | Pick a dataset → dimensions / metrics / filters → builds a `query_context`, renders with ECharts (bar/line/area/pie/table/big-number). **Save** persists the chart to the backend so dashboards can use it. |
-| **Datasets** | Browse the instance's databases and datasets (via the backend proxy) |
-| **Dashboards** ⭐ | Create a native dashboard, **drop in saved charts and arrange** them on a drag/resize grid, then **view** them rendered natively in the Venapce panel |
+| **Visualizations** | Native dashboards — drop in saved charts and **arrange** them on a drag/resize grid, then view them rendered natively (no iframe). |
+| **Chart Builder** | Pick a dataset → dimensions / metrics / filters → builds a `query_context`, renders with ECharts (bar/line/area/pie/table/big-number). **Save** persists the chart for dashboards to use. |
+| **Datasets** | Browse the instance's databases and datasets, via the backend proxy. |
+| **Nodes** | The fleet — enrolled osquery systems (Linux/macOS/Windows) from **osctrl**, with online status and search, plus **Enroll** commands for new nodes. |
+| **Stage** | The pipeline inbox: raw, un-triaged rows every pipeline feeds in. A FloMorphic flow routes each (`pending` / `promoted` / `held` / `dropped`). |
+| **Issues** | The single issues table — enriched, promoted signal. Every row carries **tags**; a saved sub-view is just a named tag filter. FloMorphic produces and advances the rows. |
+| **Settings** | Configure the Superset and osctrl connections (stored & encrypted server-side, login probed) and optionally load Superset's demo datasets. |
+
+> The Nodes and Stage/Issues views fall back to a built-in **sample data** set (with a
+> banner) when the backend isn't reachable, so the UI stays reviewable during development.
 
 ## Run
 
-Start the backend first (`../venapce-api` — see its README), then:
+Start the backend first (`venapce-api`), then:
 
 ```bash
 npm install
@@ -40,75 +55,27 @@ cp .env.example .env      # set VITE_VENAPCE_API_URL if the backend isn't on :80
 npm run dev               # http://localhost:5173
 ```
 
-Open the app → it lands on **Settings** until Superset is configured. Enter the
-Superset URL + admin credentials, Save, then build charts and assemble dashboards.
+Open the app → dashboard/chart pages funnel to **Settings** until Superset is configured.
+Enter the Superset URL + admin credentials, Save, then build charts and assemble
+dashboards. Nodes and Issues have their own data sources and don't require Superset.
 
-## ⚠️ Make your Superset instance reachable from the browser
+Other scripts: `npm run build` (type-check + production build), `npm run preview`,
+`npm run typecheck`.
 
-Because this front calls Superset's API **directly from the browser** (the headless
-model), the instance must permit this origin. Add to your **`superset_config.py`** and
-restart Superset:
+## Where to look
 
-```python
-# --- Allow the Vue dev origin to call the API ---
-ENABLE_CORS = True
-CORS_OPTIONS = {
-    "supports_credentials": True,
-    "allow_headers": ["*"],
-    "resources": ["/api/*"],
-    "origins": ["http://localhost:5173"],   # add your deployed origin here too
-}
-
-# --- Simplest auth for a headless client (DEV): drop CSRF on the API ---
-# Superset's CSRF is session-cookie based; for a token (Bearer) client the
-# cleanest path is to exempt the API. Pick ONE of these:
-WTF_CSRF_ENABLED = False
-# ...or keep CSRF globally and exempt just the data endpoint:
-# WTF_CSRF_EXEMPT_LIST = ["superset.charts.data.api.ChartDataRestApi.data"]
-
-# --- Per-space multi-tenancy (see the study §6); harmless to enable now ---
-FEATURE_FLAGS = {"DASHBOARD_RBAC": True}
-```
-
-The client sends the JWT as `Authorization: Bearer …` and, when CSRF is enabled,
-also `X-CSRFToken` with `withCredentials` so the CSRF cookie rides along. Exempting
-the API (above) removes the cookie dance entirely — recommended for the sample.
-
-### Alternative: avoid CORS with the Vite dev proxy
-
-Instead of the CORS block, route calls through Vite:
-
-```bash
-VITE_SUPERSET_PROXY_TARGET=http://localhost:8088 npm run dev
-```
-
-Then Connect using base URL **`/superset`** (same-origin → no CORS, no cookie fuss).
-
-## How the crux works (where to look)
+The native-render pipeline (Superset data → ECharts pixels):
 
 ```
-ChartBuilderView.vue          builder UI (dataset, dims, metrics, filters, viz type)
-  └─ lib/builder.ts           BuilderState → Superset query_context   (like Superset's buildQuery.ts)
-       └─ api/superset.ts     POST /api/v1/chart/data                 (the data endpoint)
-            └─ lib/echartsOption.ts   result rows → ECharts `option`  (like Superset's transformProps.ts)
+ChartBuilderView.vue        builder UI (dataset, dims, metrics, filters, viz type)
+  └─ lib/builder.ts         BuilderState → Superset query_context
+       └─ api/venapce.ts    POST /api/superset/chart/data  (backend proxy)
+            └─ lib/echartsOption.ts   result rows → ECharts `option`
                  └─ ChartRenderer.vue  <v-chart :option> / table / big-number
 ```
 
-- **`lib/builder.ts`** — swap/extend viz types, aggregates, filter ops here.
-- **`lib/echartsOption.ts`** — the transforms. For *pixel-identical* Superset output,
-  this is where you'd instead call Superset's own `transformProps` (study §2, strategy B).
-- **`api/superset.ts`** — the whole API surface; auth, refresh, catalog, `chartData`.
-
-## Notes / next steps
-
-- **Auth topology:** the sample talks to Superset **directly** for simplicity. In
-  Venapce proper, proxy the API through the FloMorphic backend so the service token
-  never reaches the browser and each request is **scoped to the caller's space**
-  (study §4, §6). The `api/superset.ts` client would then point at the Venapce proxy
-  instead of Superset.
-- **Persist built charts** back via `POST /api/v1/chart/` (not yet wired) so they also
-  live inside Superset.
-- **Session storage:** tokens are kept in `localStorage` for dev convenience. Fine for
-  a sample; the production front should hold them server-side (proxy model above).
-- **Dashboards:** reconstruct the grid from `position_json` + per-chart `query_context`
-  using the same renderer — the natural follow-on to the builder.
+- [src/api/venapce.ts](src/api/venapce.ts) — the whole backend API surface (Superset proxy, charts, dashboards, nodes, stage, issues).
+- [src/lib/builder.ts](src/lib/builder.ts) — swap/extend viz types, aggregates, filter ops.
+- [src/lib/echartsOption.ts](src/lib/echartsOption.ts) — the row→chart transforms.
+- [src/components/AppShell.vue](src/components/AppShell.vue) — the main menu / layout.
+- [src/router/index.ts](src/router/index.ts) — routes and the Superset-config guard.
