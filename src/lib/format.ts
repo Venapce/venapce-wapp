@@ -20,13 +20,3 @@ export function isOnline(lastSeen?: string): boolean {
   if (!lastSeen) return false
   return Date.now() - new Date(lastSeen).getTime() < 5 * 60_000
 }
-
-const PLATFORM_ICON: Record<string, string> = {
-  linux: '🐧',
-  windows: '🪟',
-  darwin: '',
-}
-
-export function platformIcon(platform?: string): string {
-  return PLATFORM_ICON[(platform ?? '').toLowerCase()] ?? '💻'
-}

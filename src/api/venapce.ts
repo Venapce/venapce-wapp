@@ -14,7 +14,10 @@ import type {
   IssueQuery,
   OsctrlEnrollValues,
   OsctrlEnvironment,
+  OsctrlLinkAction,
+  OsctrlLinkTarget,
   OsctrlNode,
+  OsctrlNodeDetail,
   OsctrlSettingsView,
   QueryContext,
   StageItem,
@@ -197,8 +200,33 @@ export class VenapceClient {
     })
     return data
   }
+  /** Full detail for one node (osctrl exposes a rich per-node record). */
+  async osctrlNode(env: string, uuid: string): Promise<OsctrlNodeDetail> {
+    const { data } = await this.http.get(`/api/osctrl/nodes/${encodeURIComponent(uuid)}`, {
+      params: { env },
+    })
+    return data
+  }
   async osctrlEnroll(env: string, target = 'osquery'): Promise<OsctrlEnrollValues> {
     const { data } = await this.http.get('/api/osctrl/enroll', { params: { env, target } })
+    return data
+  }
+  /**
+   * Act on an environment's enroll/remove link: rotate the secret, extend the
+   * expiration (osctrl uses a fixed period), expire it now, or clear the
+   * expiration. Returns the refreshed enroll values so the page reflects the
+   * new state.
+   */
+  async osctrlEnrollAction(
+    env: string,
+    target: OsctrlLinkTarget,
+    action: OsctrlLinkAction,
+  ): Promise<OsctrlEnrollValues> {
+    const { data } = await this.http.post('/api/osctrl/enroll/actions', {
+      env,
+      target,
+      action,
+    })
     return data
   }
 

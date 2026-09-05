@@ -195,6 +195,51 @@ export interface OsctrlNode {
   memory?: string
 }
 
+/** Full record for one node (osctrl GET /nodes/{env}/node/{uuid}, trimmed).
+ *  Richer than the table row: adds the osquery config/enroll context and a few
+ *  live counters osctrl tracks per node. */
+export interface OsctrlNodeDetail extends OsctrlNode {
+  node_key?: string
+  username?: string
+  hardware_serial?: string
+  config_hash?: string
+  daemon_hash?: string
+  bytes_received?: number
+  /** Last time osctrl saw a config pull / status log / result log from the node. */
+  last_config?: string
+  last_status?: string
+  last_result?: string
+  /** Operator-assigned tags on the node. */
+  tags?: string[]
+}
+
+/** An action osctrl accepts on an enroll/remove link for an environment. */
+export type OsctrlLinkAction = 'rotate' | 'extend' | 'expire' | 'notexpire'
+
+/** Which link an action targets — the enroll one or the remove/uninstall one. */
+export type OsctrlLinkTarget = 'enroll' | 'remove'
+
+/** Live state of an environment's enroll (or remove) link. These are real,
+ *  configurable values on the environment — not just documentation.
+ *  Enroll and remove are independent links with their own secret and expiry. */
+export interface OsctrlLinkState {
+  /** False once expired / manually disabled: the one-liner stops working. */
+  enabled: boolean
+  /** ISO expiry; absent means "never expires". */
+  expires?: string
+  /** The link's own secret path segment in the script URL —
+   *  `https://{host}/{envUUID}/{path}/enroll.sh`. Rotating replaces it. */
+  path?: string
+}
+
+/** A pre-built osquery package osctrl publishes for an environment. */
+export interface OsctrlPackage {
+  /** deb | rpm | pkg | msi */
+  format: string
+  arch?: string
+  url: string
+}
+
 /** Enrollment helper values for an environment (osctrl ApiDataResponse.data). */
 export interface OsctrlEnrollValues {
   secret?: string
@@ -202,6 +247,18 @@ export interface OsctrlEnrollValues {
   certificate?: string
   /** Ready-to-run enroll one-liners keyed by platform (linux/windows/darwin). */
   oneLiner?: Record<string, string>
+  /** Ready-to-run remove/uninstall one-liners keyed by platform — osctrl serves a
+   *  remove.sh / remove.ps1 that stops osqueryd and de-enrolls the node. */
+  removeOneLiner?: Record<string, string>
+  /** TLS hostname the enrolled node reports to (for the tutorial). */
+  hostname?: string
+  /** The environment UUID that forms the first path segment of the script URLs. */
+  envUUID?: string
+  /** Live, editable state of the enroll and remove links for this environment. */
+  enroll?: OsctrlLinkState
+  remove?: OsctrlLinkState
+  /** Optional pre-built packages (DEB/RPM/PKG/MSI) for manual installs. */
+  packages?: OsctrlPackage[]
   [k: string]: unknown
 }
 

@@ -2,9 +2,10 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useOsctrlStore } from '@/stores/osctrl'
-import { isOnline, platformIcon, relativeTime } from '@/lib/format'
-import { sampleEnvironments, sampleNodes } from '@/lib/samples'
-import type { OsctrlEnvironment, OsctrlNode } from '@/api/types'
+import { isOnline, relativeTime } from '@/lib/format'
+import OsIcon from '@/components/OsIcon.vue'
+import { sampleEnvironments, sampleNodeDetail, sampleNodes } from '@/lib/samples'
+import type { OsctrlEnvironment, OsctrlNode, OsctrlNodeDetail } from '@/api/types'
 
 // Enrolled systems (osquery nodes) for the selected osctrl environment.
 const conn = useConnectionStore()
@@ -20,6 +21,11 @@ const error = ref('')
 // built-in sample set so the UI is reviewable.
 const sample = ref(false)
 
+// ---- node-detail drawer ----
+const selected = ref<OsctrlNode | null>(null)
+const detail = ref<OsctrlNodeDetail | null>(null)
+const detailLoading = ref(false)
+
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
   if (!q) return nodes.value
@@ -30,6 +36,53 @@ const filtered = computed(() => {
 })
 
 const onlineCount = computed(() => nodes.value.filter((n) => isOnline(n.last_seen)).length)
+
+// Ordered field list for the specification grid in the drawer.
+const spec = computed<Array<{ label: string; value: string }>>(() => {
+  const d = detail.value
+  if (!d) return []
+  const rows: Array<[string, unknown]> = [
+    ['UUID', d.uuid],
+    ['Hostname', d.hostname],
+    ['Local name', d.localname],
+    ['Username', d.username],
+    ['IP address', d.ip_address],
+    ['Platform', d.platform_version || d.platform],
+    ['osquery', d.osquery_version],
+    ['CPU', d.cpu],
+    ['Memory', d.memory],
+    ['Hardware serial', d.hardware_serial],
+    ['Environment', d.environment],
+    ['Enrolled', d.created_at ? new Date(d.created_at).toLocaleString() : ''],
+    ['Last seen', d.last_seen ? relativeTime(d.last_seen) : ''],
+    ['Last config', d.last_config ? relativeTime(d.last_config) : ''],
+    ['Last status', d.last_status ? relativeTime(d.last_status) : ''],
+    ['Last result', d.last_result ? relativeTime(d.last_result) : ''],
+    ['Config hash', d.config_hash],
+    ['Data received', d.bytes_received != null ? `${(d.bytes_received / 1_048_576).toFixed(1)} MB` : ''],
+    ['Node key', d.node_key],
+  ]
+  return rows.filter(([, v]) => v != null && v !== '').map(([label, v]) => ({ label, value: String(v) }))
+})
+
+async function openNode(n: OsctrlNode) {
+  selected.value = n
+  detail.value = null
+  detailLoading.value = true
+  try {
+    detail.value = await conn.client.osctrlNode(env.value, n.uuid)
+  } catch {
+    // Backend not wired yet — synthesise a rich record from the row.
+    detail.value = sampleNodeDetail(n)
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+function closeDrawer() {
+  selected.value = null
+  detail.value = null
+}
 
 async function loadEnvironments() {
   try {
@@ -49,6 +102,7 @@ async function loadNodes() {
     nodes.value = []
     return
   }
+  closeDrawer()
   loading.value = true
   error.value = ''
   try {
@@ -91,7 +145,7 @@ onMounted(async () => {
         <button class="btn-outline" @click="loadNodes">Refresh</button>
       </div>
     </div>
-    <p class="mb-4 text-sm text-fg-muted">Enrolled systems reporting to osctrl.</p>
+    <p class="mb-4 text-sm text-fg-muted">Enrolled systems reporting to osctrl. Select a row for full details.</p>
 
     <div v-if="sample" class="mb-4 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning">
       Showing sample data — connect osctrl in
@@ -119,7 +173,13 @@ onMounted(async () => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="n in filtered" :key="n.uuid" class="border-t border-line hover:bg-bg">
+          <tr
+            v-for="n in filtered"
+            :key="n.uuid"
+            class="cursor-pointer border-t border-line hover:bg-bg"
+            :class="selected?.uuid === n.uuid ? 'bg-accent-soft' : ''"
+            @click="openNode(n)"
+          >
             <td class="px-4 py-2">
               <span
                 class="inline-flex items-center gap-1.5 text-xs font-medium"
@@ -134,7 +194,10 @@ onMounted(async () => {
               <div v-if="n.localname && n.localname !== n.hostname" class="text-xs text-fg-subtle">{{ n.localname }}</div>
             </td>
             <td class="px-4 py-2 text-fg-muted">
-              <span class="mr-1">{{ platformIcon(n.platform) }}</span>{{ n.platform_version || n.platform || '—' }}
+              <span class="inline-flex items-center gap-1.5">
+                <OsIcon :platform="n.platform" class="text-fg-subtle" />
+                {{ n.platform_version || n.platform || '—' }}
+              </span>
             </td>
             <td class="px-4 py-2 font-mono text-xs text-fg-muted">{{ n.ip_address || '—' }}</td>
             <td class="px-4 py-2 text-fg-muted">{{ n.osquery_version || '—' }}</td>
@@ -144,5 +207,66 @@ onMounted(async () => {
         </tbody>
       </table>
     </div>
+
+    <!-- Node-detail drawer -->
+    <Transition name="drawer">
+      <div v-if="selected" class="fixed inset-0 z-40 flex justify-end" @keydown.esc="closeDrawer">
+        <div class="absolute inset-0 bg-black/30" @click="closeDrawer" />
+        <aside class="relative z-10 flex h-full w-full max-w-md flex-col border-l border-line bg-surface shadow-lg">
+          <header class="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span
+                  class="h-2 w-2 shrink-0 rounded-full"
+                  :class="isOnline(selected.last_seen) ? 'bg-success' : 'bg-fg-subtle'"
+                />
+                <OsIcon :platform="selected.platform" :size="18" class="text-fg-muted" />
+                <h2 class="truncate text-base font-semibold text-fg">{{ selected.hostname }}</h2>
+              </div>
+              <p class="truncate font-mono text-xs text-fg-subtle">{{ selected.uuid }}</p>
+            </div>
+            <button class="btn-ghost -mr-2 px-2 py-1 text-lg leading-none" aria-label="Close" @click="closeDrawer">×</button>
+          </header>
+
+          <div class="flex-1 overflow-y-auto px-5 py-4">
+            <p v-if="detailLoading" class="text-sm text-fg-subtle">Loading details…</p>
+
+            <template v-else-if="detail">
+              <div v-if="detail.tags?.length" class="mb-4 flex flex-wrap gap-1.5">
+                <span v-for="t in detail.tags" :key="t" class="chip">{{ t }}</span>
+              </div>
+
+              <!-- Specification -->
+              <h3 class="label">Specification</h3>
+              <dl class="mb-5 divide-y divide-line rounded-md border border-line">
+                <div v-for="row in spec" :key="row.label" class="flex gap-3 px-3 py-1.5 text-xs">
+                  <dt class="w-28 shrink-0 text-fg-muted">{{ row.label }}</dt>
+                  <dd class="min-w-0 flex-1 break-words font-mono text-fg">{{ row.value }}</dd>
+                </div>
+              </dl>
+            </template>
+          </div>
+        </aside>
+      </div>
+    </Transition>
   </div>
 </template>
+
+<style scoped>
+.drawer-enter-active,
+.drawer-leave-active {
+  transition: opacity 0.15s ease;
+}
+.drawer-enter-active aside,
+.drawer-leave-active aside {
+  transition: transform 0.2s ease;
+}
+.drawer-enter-from,
+.drawer-leave-to {
+  opacity: 0;
+}
+.drawer-enter-from aside,
+.drawer-leave-to aside {
+  transform: translateX(100%);
+}
+</style>
