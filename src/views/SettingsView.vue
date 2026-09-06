@@ -3,17 +3,21 @@ import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useConnectionStore } from '@/stores/connection'
 import { useOsctrlStore } from '@/stores/osctrl'
+import { useFlomorphicStore } from '@/stores/flomorphic'
 import SupersetSettingsCard from '@/components/settings/SupersetSettingsCard.vue'
 import DemoDataCard from '@/components/settings/DemoDataCard.vue'
+import FlomorphicSettingsCard from '@/components/settings/FlomorphicSettingsCard.vue'
 import OsctrlSettingsCard from '@/components/settings/OsctrlSettingsCard.vue'
 
 const conn = useConnectionStore()
 const osctrl = useOsctrlStore()
+const flo = useFlomorphicStore()
 const route = useRoute()
 const isSetup = route.query.setup === '1'
 
 onMounted(() => {
   if (!osctrl.loaded) osctrl.loadSettings()
+  if (!flo.loaded) flo.loadSettings()
 })
 </script>
 
@@ -35,6 +39,9 @@ onMounted(() => {
 
       <!-- Optional example datasets for a demo -->
       <DemoDataCard />
+
+      <!-- Connect FloMorphic (the venapce plugin) → turnkey osctrl space -->
+      <FlomorphicSettingsCard />
 
       <!-- Fleet manager behind the Nodes area -->
       <OsctrlSettingsCard />

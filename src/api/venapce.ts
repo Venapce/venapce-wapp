@@ -10,6 +10,7 @@ import type {
   DatasetDetail,
   DatasetSummary,
   ExamplesStatus,
+  FlomorphicSettingsView,
   Issue,
   IssueQuery,
   OsctrlEnrollValues,
@@ -19,6 +20,7 @@ import type {
   OsctrlNode,
   OsctrlNodeDetail,
   OsctrlSettingsView,
+  OsspaceResult,
   QueryContext,
   StageItem,
   StageQuery,
@@ -72,6 +74,11 @@ export class VenapceClient {
   }
   async testSuperset(): Promise<SupersetSettingsView> {
     const { data } = await this.http.post('/api/settings/superset/test', {})
+    return data
+  }
+  /** Revert an external-Superset override back to the built-in (env-managed) connection. */
+  async resetSuperset(): Promise<SupersetSettingsView> {
+    const { data } = await this.http.post('/api/settings/superset/reset', {})
     return data
   }
   /** Current state of the on-demand example-data (demo) load. */
@@ -186,6 +193,26 @@ export class VenapceClient {
   }
   async testOsctrl(): Promise<OsctrlSettingsView> {
     const { data } = await this.http.post('/api/settings/osctrl/test', {})
+    return data
+  }
+
+  // ---- FloMorphic plugin registration + the osctrl-space broker ----
+  async flomorphicSettings(): Promise<FlomorphicSettingsView> {
+    const { data } = await this.http.get('/api/settings/flomorphic')
+    return data
+  }
+  /** Register the venapce plugin from its pasted FloMorphic plugin env. */
+  async saveFlomorphic(body: { env: string }): Promise<FlomorphicSettingsView> {
+    const { data } = await this.http.put('/api/settings/flomorphic', body)
+    return data
+  }
+  /**
+   * Drive infra's osspace flow. Idempotent + pollable: returns `pending` with a
+   * Google-OAuth `redirect` url the user must open, then `connected` once the
+   * space is provisioned and wired up as a managed osctrl connection.
+   */
+  async connectOsspace(): Promise<OsspaceResult> {
+    const { data } = await this.http.post('/api/settings/flomorphic/osspace', {})
     return data
   }
 

@@ -11,6 +11,7 @@ interface State {
   supersetUrl: string
   username: string
   connected: boolean | null
+  managed: boolean
   loaded: boolean
   error: string
 }
@@ -22,6 +23,7 @@ export const useConnectionStore = defineStore('connection', {
     supersetUrl: '',
     username: '',
     connected: null,
+    managed: false,
     loaded: false,
     error: '',
   }),
@@ -53,10 +55,18 @@ export const useConnectionStore = defineStore('connection', {
       return view
     },
 
+    /** Revert an external-Superset override back to the built-in (env-managed) one. */
+    async reset() {
+      const view = await this.client.resetSuperset()
+      this.applyView(view)
+      return view
+    },
+
     applyView(view: SupersetSettingsView) {
       this.configured = !!view.configured
       this.supersetUrl = view.url ?? ''
       this.username = view.username ?? ''
+      this.managed = !!view.managed
       if (view.connected != null) this.connected = view.connected
     },
   },

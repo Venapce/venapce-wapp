@@ -14,6 +14,7 @@ interface State {
   username: string
   environment: string
   connected: boolean | null
+  managed: boolean
   loaded: boolean
   error: string
 }
@@ -25,6 +26,7 @@ export const useOsctrlStore = defineStore('osctrl', {
     username: '',
     environment: '',
     connected: null,
+    managed: false,
     loaded: false,
     error: '',
   }),
@@ -67,6 +69,7 @@ export const useOsctrlStore = defineStore('osctrl', {
       this.url = view.url ?? ''
       this.username = view.username ?? ''
       this.environment = view.environment ?? ''
+      this.managed = !!view.managed
       if (view.connected != null) this.connected = view.connected
     },
   },

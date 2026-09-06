@@ -113,6 +113,8 @@ export interface SupersetSettingsView {
   connected?: boolean
   connectedAs?: string
   connectionError?: string
+  /** True when the connection is env-managed by the deploy (read-only in Settings). */
+  managed?: boolean
 }
 
 /** On-demand load of Superset's example datasets (demo data), reported by the backend. */
@@ -164,6 +166,29 @@ export interface OsctrlSettingsView {
   url?: string
   username?: string
   environment?: string
+  connected?: boolean
+  connectedAs?: string
+  connectionError?: string
+  /** True when this connection is a managed inflowenger osctrl space (read-only). */
+  managed?: boolean
+}
+
+/** What GET/PUT /api/settings/flomorphic returns (the venapce plugin registration). */
+export interface FlomorphicSettingsView {
+  configured: boolean
+  pluginId?: string
+  infraBase?: string
+  /** True when a managed osctrl space has been provisioned + wired up. */
+  osctrlManaged?: boolean
+}
+
+/** Outcome of POST /api/settings/flomorphic/osspace (the osctrl-space broker). */
+export interface OsspaceResult {
+  status: 'pending' | 'connected'
+  /** When pending: the Google-OAuth url the user must open to provision a space. */
+  redirect?: string
+  environment?: string
+  hostname?: string
   connected?: boolean
   connectedAs?: string
   connectionError?: string

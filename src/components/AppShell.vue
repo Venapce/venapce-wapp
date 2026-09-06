@@ -2,12 +2,16 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { useConnectionStore } from '@/stores/connection'
+import { useOsctrlStore } from '@/stores/osctrl'
+import { useFlomorphicStore } from '@/stores/flomorphic'
 import { useIssueViewsStore } from '@/stores/issueViews'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import IssueViewDialog from '@/components/IssueViewDialog.vue'
 import type { IssueView } from '@/api/types'
 
 const conn = useConnectionStore()
+const osctrl = useOsctrlStore()
+const flo = useFlomorphicStore()
 const views = useIssueViewsStore()
 const router = useRouter()
 
@@ -50,21 +54,49 @@ function deleteView(v: IssueView) {
   if (router.currentRoute.value.params.viewId === v.id) router.push({ name: 'issues' })
 }
 
-const host = computed(() => {
+// hostOf trims a URL down to its host for the compact connection rows.
+function hostOf(u: string) {
   try {
-    return new URL(conn.supersetUrl).host
+    return new URL(u).host
   } catch {
-    return conn.supersetUrl || 'not configured'
+    return u || ''
   }
-})
+}
 
-const statusColor = computed(() => {
-  if (!conn.configured) return 'bg-fg-subtle'
-  if (conn.connected === false) return 'bg-danger'
-  return 'bg-success'
-})
+// The connection-status rows pinned under Settings — one per upstream Venapce
+// depends on. Colour: subtle = not configured, danger = login failing, success
+// = live. FloMorphic has no login probe, so "registered" reads as live.
+const statuses = computed(() => [
+  {
+    key: 'superset',
+    label: `Superset · ${hostOf(conn.supersetUrl) || 'not configured'}`,
+    title: conn.supersetUrl,
+    sub: conn.configured ? conn.username : 'not configured',
+    color: !conn.configured ? 'bg-fg-subtle' : conn.connected === false ? 'bg-danger' : 'bg-success',
+  },
+  {
+    key: 'osctrl',
+    label: `osctrl · ${hostOf(osctrl.url) || 'not configured'}`,
+    title: osctrl.url,
+    sub: osctrl.configured
+      ? `${osctrl.environment || osctrl.username}${osctrl.managed ? ' · managed' : ''}`
+      : 'not configured',
+    color: !osctrl.configured ? 'bg-fg-subtle' : osctrl.connected === false ? 'bg-danger' : 'bg-success',
+  },
+  {
+    key: 'flomorphic',
+    label: `FloMorphic · ${hostOf(flo.infraBase) || 'not connected'}`,
+    title: flo.infraBase,
+    sub: flo.configured ? flo.pluginId || 'plugin registered' : 'not connected',
+    color: !flo.configured ? 'bg-fg-subtle' : 'bg-success',
+  },
+])
 
-onMounted(() => views.load())
+onMounted(() => {
+  views.load()
+  if (!osctrl.loaded) osctrl.loadSettings()
+  if (!flo.loaded) flo.loadSettings()
+})
 </script>
 
 <template>
@@ -177,16 +209,15 @@ onMounted(() => views.load())
             Settings
           </RouterLink>
           <RouterLink
+            v-for="s in statuses"
+            :key="s.key"
             :to="{ name: 'settings' }"
-            class="mt-1 block rounded-lg px-2.5 py-2 text-xs hover:bg-accent-soft"
-            title="Superset connection"
+            class="mt-0.5 block rounded-md px-2.5 py-1 text-[11px] hover:bg-accent-soft"
+            :title="`${s.title}\n${s.sub}`"
           >
             <div class="flex items-center gap-2">
-              <span class="h-2 w-2 rounded-full" :class="statusColor"></span>
-              <span class="truncate text-fg-muted" :title="conn.supersetUrl">Superset · {{ host }}</span>
-            </div>
-            <div class="pl-4 text-[11px] text-fg-subtle">
-              {{ conn.configured ? conn.username : 'not configured' }}
+              <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="s.color"></span>
+              <span class="truncate text-fg-muted">{{ s.label }}</span>
             </div>
           </RouterLink>
         </div>
