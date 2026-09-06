@@ -10,6 +10,8 @@ import type {
   DatasetDetail,
   DatasetSummary,
   ExamplesStatus,
+  FlomorphicCheckResult,
+  FlomorphicConnectResult,
   FlomorphicSettingsView,
   Issue,
   IssueQuery,
@@ -201,9 +203,26 @@ export class VenapceClient {
     const { data } = await this.http.get('/api/settings/flomorphic')
     return data
   }
-  /** Register the venapce plugin from its pasted FloMorphic plugin env. */
-  async saveFlomorphic(body: { env: string }): Promise<FlomorphicSettingsView> {
-    const { data } = await this.http.put('/api/settings/flomorphic', body)
+  /**
+   * Register venapce as a FloMorphic plugin: create the extension row, mint its
+   * credential, connect the in-process plugin, and sync its actions into palette
+   * nodes. Reuses the stored row on repeat calls.
+   */
+  async connectFlomorphic(): Promise<FlomorphicConnectResult> {
+    const { data } = await this.http.put('/api/settings/flomorphic', {})
+    return data
+  }
+  /**
+   * Redefine venapce in FloMorphic: delete the extension row (and its synced
+   * nodes), then register afresh and re-sync. The "clear and re-add" path.
+   */
+  async refreshFlomorphic(): Promise<FlomorphicConnectResult> {
+    const { data } = await this.http.post('/api/settings/flomorphic/plugin/refresh', {})
+    return data
+  }
+  /** Check plugin connectivity as FloMorphic sees it (live @actions round-trip). */
+  async checkFlomorphicPlugin(): Promise<FlomorphicCheckResult> {
+    const { data } = await this.http.post('/api/settings/flomorphic/plugin/check', {})
     return data
   }
   /**

@@ -1,24 +1,22 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useFlomorphicStore } from '@/stores/flomorphic'
-import { useOsctrlStore } from '@/stores/osctrl'
 import { apiErr } from '@/api/venapce'
 
-// One Settings card: connect Venapce to FloMorphic and, through it, provision a
-// turnkey osctrl space. Venapce runs as a FloMorphic plugin — the operator
-// defines a "venapce" plugin in the FloMorphic panel, pastes its env here, and
-// the backend brokers an osctrl space via infra's osspace flow (Google OAuth).
+// One Settings card: connect Venapce to FloMorphic. Venapce runs as a FloMorphic
+// plugin — the backend registers it as an extension (create row + mint credential
+// + connect the in-process plugin + sync its actions into palette nodes), all via
+// the FloMorphic API (FLOMORPHIC_URL + FLOMORPHIC_JWT_SECRET). Connectivity is
+// reported as FloMorphic sees it. Refresh re-registers from scratch (delete + add)
+// to pick up a changed action set. Once registered, FloMorphic can broker a
+// turnkey osctrl space; that provisioning lives in the osctrl connection card.
 const flo = useFlomorphicStore()
-const osctrl = useOsctrlStore()
 
-const env = ref('')
 const saving = ref(false)
+const refreshing = ref(false)
+const checking = ref(false)
 const error = ref('')
-
-const connecting = ref(false)
-const pendingUrl = ref('')
-const success = ref(false)
-let poll: ReturnType<typeof setInterval> | null = null
+const notice = ref('')
 
 // Closed accordion once the plugin is registered; open it to review or reconnect.
 const open = ref(!flo.configured)
@@ -29,31 +27,44 @@ watch(
     if (!loaded || didInit) return
     open.value = !flo.configured
     didInit = true
+    // Registered already: check how FloMorphic sees the plugin without a click.
+    if (flo.configured) void check()
   },
   { immediate: true },
 )
 
-const osctrlActive = computed(() => osctrl.managed && osctrl.connected !== false && osctrl.configured)
-
 const badge = computed(() => {
-  if (osctrlActive.value) return { text: 'osctrl active', cls: 'bg-success-soft text-success' }
-  if (flo.configured) return { text: 'Plugin registered', cls: 'bg-accent-soft text-accent' }
+  if (flo.osctrlManaged) return { text: 'osctrl active', cls: 'bg-success-soft text-success' }
+  if (flo.configured) return { text: 'Registered', cls: 'bg-accent-soft text-accent' }
+  if (!flo.apiConfigured) return { text: 'API not configured', cls: 'bg-surface-2 text-fg-muted' }
   return { text: 'Not connected', cls: 'bg-surface-2 text-fg-muted' }
 })
 
-function stopPoll() {
-  if (poll) {
-    clearInterval(poll)
-    poll = null
+// Connection status as FloMorphic sees it (the reference), from the probe.
+const conn = computed(() => {
+  const p = flo.probe
+  if (!p) return { text: checking.value ? 'Checking…' : 'Unknown', cls: 'bg-surface-2 text-fg-muted', detail: '' }
+  if (p.reachable) {
+    const n = p.actions ?? flo.nodes ?? undefined
+    return { text: 'Connected', cls: 'bg-success-soft text-success', detail: n != null ? `${n} node${n === 1 ? '' : 's'}` : '' }
   }
+  return { text: 'Not reachable', cls: 'bg-danger-soft text-danger', detail: p.error ?? '' }
+})
+
+function report(res: { nodes?: number; syncError?: string; pluginError?: string }) {
+  error.value = ''
+  notice.value = ''
+  if (res.pluginError) error.value = `Plugin did not connect: ${res.pluginError}`
+  else if (res.syncError) error.value = `Connected, but sync failed: ${res.syncError}`
+  else notice.value = `Synced ${res.nodes ?? 0} node${res.nodes === 1 ? '' : 's'} into the FloMorphic palette.`
 }
 
-async function save() {
+async function connect() {
   saving.value = true
   error.value = ''
+  notice.value = ''
   try {
-    await flo.save(env.value)
-    env.value = ''
+    report(await flo.connect())
   } catch (e) {
     error.value = apiErr(e)
   } finally {
@@ -61,51 +72,34 @@ async function save() {
   }
 }
 
-async function connect() {
-  connecting.value = true
+async function refresh() {
+  refreshing.value = true
   error.value = ''
-  success.value = false
-  pendingUrl.value = ''
+  notice.value = ''
   try {
-    const res = await flo.connectOsspace()
-    if (res.status === 'connected') {
-      success.value = true
-      connecting.value = false
-      return
-    }
-    // Pending: the user must authenticate with Google to provision the space.
-    if (res.redirect) {
-      pendingUrl.value = res.redirect
-      window.open(res.redirect, '_blank', 'noopener')
-      startPoll()
-    }
+    report(await flo.refresh())
   } catch (e) {
     error.value = apiErr(e)
-    connecting.value = false
+  } finally {
+    refreshing.value = false
   }
 }
 
-function startPoll() {
-  stopPoll()
-  poll = setInterval(async () => {
-    try {
-      const res = await flo.connectOsspace()
-      if (res.status === 'connected') {
-        stopPoll()
-        connecting.value = false
-        pendingUrl.value = ''
-        success.value = true
-      }
-    } catch {
-      // Stay quiet during the poll; the user may still be authenticating.
-    }
-  }, 4000)
+async function check() {
+  checking.value = true
+  error.value = ''
+  try {
+    await flo.check()
+  } catch (e) {
+    error.value = apiErr(e)
+  } finally {
+    checking.value = false
+  }
 }
 
 onMounted(() => {
   if (!flo.loaded) flo.loadSettings()
 })
-onUnmounted(stopPoll)
 </script>
 
 <template>
@@ -115,8 +109,8 @@ onUnmounted(stopPoll)
       <div class="min-w-0">
         <h2 class="text-sm font-semibold text-fg">Connect FloMorphic</h2>
         <p class="truncate text-xs text-fg-muted">
-          <template v-if="flo.configured">Plugin registered · {{ flo.infraBase }}</template>
-          <template v-else>Register the venapce plugin to get a turnkey osctrl space.</template>
+          <template v-if="flo.configured">Registered as {{ flo.pluginId }}</template>
+          <template v-else>Register the venapce plugin so its nodes appear in the FloMorphic palette.</template>
         </p>
       </div>
       <span class="ml-auto shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium" :class="badge.cls">
@@ -126,88 +120,110 @@ onUnmounted(stopPoll)
     </button>
 
     <div v-show="open" class="mt-4">
-    <!-- Tutorial -->
-    <ol class="mb-4 space-y-3 text-sm text-fg">
-      <li class="flex gap-3">
-        <span class="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-surface-2 text-[11px] font-semibold text-fg-muted">1</span>
-        <span>
-          Install <span class="font-medium">FloMorphic</span> (it ships with Venapce). All operations and logic are
-          defined in FloMorphic — without it you can't define rules or logic on your data, and Node data won't flow
-          into Venapce's databases and tables.
-        </span>
-      </li>
-      <li class="flex gap-3">
-        <span class="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-surface-2 text-[11px] font-semibold text-fg-muted">2</span>
-        <span>
-          In the FloMorphic panel, open the <span class="font-medium">extension / plugin</span> menu and define a
-          new <span class="font-medium">venapce</span> plugin.
-        </span>
-      </li>
-      <li class="flex gap-3">
-        <span class="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-surface-2 text-[11px] font-semibold text-fg-muted">3</span>
-        <span>Copy the plugin's <span class="font-medium">env values</span> and paste them below, then Save.</span>
-      </li>
-    </ol>
+      <!-- FloMorphic API access (from the backend environment) -->
+      <div class="rounded-lg border border-line bg-surface-2/40 p-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-semibold uppercase tracking-wide text-fg-muted">FloMorphic API</h3>
+          <span
+            class="rounded-full px-2 py-0.5 text-[11px] font-medium"
+            :class="flo.apiConfigured ? 'bg-success-soft text-success' : 'bg-surface-2 text-fg-muted'"
+          >
+            {{ flo.apiConfigured ? 'Configured' : 'Not configured' }}
+          </span>
+        </div>
 
-    <div class="space-y-3">
-      <div>
-        <label class="label">Plugin env</label>
-        <textarea
-          v-model="env"
-          rows="5"
-          class="field font-mono text-xs"
-          :placeholder="flo.configured ? 'Registered — paste again to update' : 'PLUGIN_ID=…\nINFRA_CRED=…\nINFRA_URL=nats://infra:4222'"
-          autocomplete="off"
-          spellcheck="false"
-        ></textarea>
-        <p v-if="flo.configured" class="mt-1 text-xs text-fg-subtle">
-          Connected to infra at <span class="font-mono">{{ flo.infraBase }}</span>.
+        <dl class="mt-3 space-y-2 text-sm">
+          <div class="flex items-baseline justify-between gap-3">
+            <dt class="text-fg-muted">API URL</dt>
+            <dd class="min-w-0 truncate font-mono text-xs text-fg" :class="{ 'text-fg-subtle italic': !flo.apiUrl }">
+              {{ flo.apiUrl || 'Not set' }}
+            </dd>
+          </div>
+          <div class="flex items-baseline justify-between gap-3">
+            <dt class="text-fg-muted">JWT secret</dt>
+            <dd class="font-mono text-xs" :class="flo.jwtSecretSet ? 'text-fg' : 'text-fg-subtle italic'">
+              <template v-if="flo.jwtSecretSet">•••••••• configured</template>
+              <template v-else>Not set</template>
+            </dd>
+          </div>
+        </dl>
+
+        <p class="mt-3 text-xs text-fg-subtle">
+          Set from the backend environment
+          (<span class="font-mono">FLOMORPHIC_URL</span> and
+          <span class="font-mono">FLOMORPHIC_JWT_SECRET</span>). The secret must match FloMorphic's API JWT
+          secret. Restart venapce-api after changing them.
         </p>
       </div>
 
-      <p v-if="error" class="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ error }}</p>
+      <!-- Register + live status -->
+      <div class="mt-4 space-y-3">
+        <p v-if="!flo.apiConfigured" class="rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
+          Set <span class="font-mono">FLOMORPHIC_URL</span> and
+          <span class="font-mono">FLOMORPHIC_JWT_SECRET</span> in the backend environment, then reload to connect.
+        </p>
 
-      <div class="flex gap-2">
-        <button type="button" class="btn-primary" :disabled="saving || !env.trim()" @click="save">
-          {{ saving ? 'Saving…' : flo.configured ? 'Update plugin' : 'Save plugin' }}
-        </button>
+        <!-- Plugin connection, as FloMorphic sees it -->
+        <div v-if="flo.configured" class="rounded-lg border border-line bg-surface-2/40 p-4">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-fg-muted">Plugin connection</h3>
+              <p class="mt-1 truncate text-xs text-fg-subtle">
+                FloMorphic's view<template v-if="conn.detail"> · {{ conn.detail }}</template>
+              </p>
+            </div>
+            <span class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium" :class="conn.cls">
+              {{ conn.text }}
+            </span>
+          </div>
+          <p class="mt-2 text-xs text-fg-subtle">
+            Checked through FloMorphic (a live <span class="font-mono">@actions</span> round-trip to the plugin) —
+            FloMorphic is the reference for whether the plugin is connected and listed.
+          </p>
+        </div>
+
+        <p v-if="notice" class="rounded-md bg-success-soft px-3 py-2 text-sm text-success">{{ notice }}</p>
+        <p v-if="error" class="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ error }}</p>
+
+        <div class="flex flex-wrap gap-2">
+          <button
+            type="button"
+            class="btn-primary"
+            :disabled="saving || refreshing || !flo.apiConfigured"
+            @click="connect"
+          >
+            {{ saving ? 'Connecting…' : flo.configured ? 'Reconnect + sync' : 'Connect FloMorphic' }}
+          </button>
+          <button
+            v-if="flo.configured"
+            type="button"
+            class="btn-outline"
+            :disabled="refreshing || saving"
+            @click="refresh"
+          >
+            {{ refreshing ? 'Refreshing…' : 'Refresh (re-add)' }}
+          </button>
+          <button
+            v-if="flo.configured"
+            type="button"
+            class="btn-outline"
+            :disabled="checking"
+            @click="check"
+          >
+            {{ checking ? 'Checking…' : 'Check connection' }}
+          </button>
+        </div>
+
+        <p v-if="flo.configured" class="text-xs text-fg-subtle">
+          <span class="font-medium text-fg-muted">Refresh</span> deletes the extension in FloMorphic and adds it
+          again — use it after venapce's node set changes so the palette rebuilds from the current actions.
+        </p>
       </div>
-    </div>
 
-    <!-- osctrl space provisioning -->
-    <div v-if="flo.configured" class="mt-5 border-t border-line pt-5">
-      <h3 class="mb-1 text-sm font-semibold text-fg">Your osctrl space</h3>
-      <p class="mb-3 text-xs text-fg-muted">
-        Provision an osctrl space for this install. You'll sign in with Google once; afterwards Nodes and Enroll
-        work directly against <span class="font-mono">osctrl.inflowenger.com</span>.
+      <p v-if="flo.configured" class="mt-5 border-t border-line pt-4 text-xs text-fg-subtle">
+        Registered. Provision your turnkey osctrl space from the
+        <span class="font-medium text-fg-muted">osctrl connection</span> card below.
       </p>
-
-      <p v-if="osctrlActive || success" class="mb-3 rounded-md bg-success-soft px-3 py-2 text-sm text-success">
-        osctrl space active — Nodes and Enroll are live. Environment
-        <span class="font-mono">{{ osctrl.environment || '—' }}</span>.
-      </p>
-
-      <p v-else-if="connecting" class="mb-3 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
-        Waiting for Google sign-in in the new tab… this page will update automatically once your space is ready.
-        <a v-if="pendingUrl" :href="pendingUrl" target="_blank" rel="noopener" class="text-accent hover:underline">
-          Reopen sign-in ↗
-        </a>
-      </p>
-
-      <button
-        v-if="!osctrlActive && !success"
-        type="button"
-        class="btn-primary"
-        :disabled="connecting"
-        @click="connect"
-      >
-        {{ connecting ? 'Waiting…' : 'Create / connect osctrl space' }}
-      </button>
-
-      <p class="mt-3 text-xs text-fg-subtle">
-        Prefer to run your own osctrl? Configure it directly in the osctrl card below (recommended for production).
-      </p>
-    </div>
     </div>
   </section>
 </template>

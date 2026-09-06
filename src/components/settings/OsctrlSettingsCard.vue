@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useOsctrlStore } from '@/stores/osctrl'
+import { useFlomorphicStore } from '@/stores/flomorphic'
 import { apiErr } from '@/api/venapce'
 
 // The osctrl connection card. osctrl backs the Nodes area (enrolled systems +
-// enroll commands). Two ways in: a managed inflowenger space (provisioned via
-// the Connect FloMorphic card above), or — recommended for production — your own
-// self-hosted osctrl configured here. The backend stores/encrypts the
-// credentials and probes the API login; the JWT never reaches the browser.
+// enroll commands). Two ways in: a managed inflowenger space (provisioned here
+// through FloMorphic), or — recommended for production — your own self-hosted
+// osctrl configured below. The backend stores/encrypts the credentials and
+// probes the API login; the JWT never reaches the browser.
 const osctrl = useOsctrlStore()
+const flo = useFlomorphicStore()
 
 const url = ref(osctrl.url || 'http://localhost:9002')
 const username = ref(osctrl.username || 'admin')
@@ -69,6 +71,68 @@ async function test() {
     saving.value = false
   }
 }
+
+// ---- Managed space provisioning (brokered through FloMorphic's osspace flow) ----
+// A managed osctrl space is provisioned once per inflowenger license; it depends
+// on the FloMorphic plugin being registered, so this section is disabled until
+// FloMorphic is connected.
+const connecting = ref(false)
+const pendingUrl = ref('')
+const provisioned = ref(false)
+let poll: ReturnType<typeof setInterval> | null = null
+
+function stopPoll() {
+  if (poll) {
+    clearInterval(poll)
+    poll = null
+  }
+}
+
+async function connect() {
+  connecting.value = true
+  error.value = ''
+  provisioned.value = false
+  pendingUrl.value = ''
+  try {
+    const res = await flo.connectOsspace()
+    if (res.status === 'connected') {
+      provisioned.value = true
+      connecting.value = false
+      return
+    }
+    // Pending: the user must authenticate with Google to provision the space.
+    if (res.redirect) {
+      pendingUrl.value = res.redirect
+      window.open(res.redirect, '_blank', 'noopener')
+      startPoll()
+    }
+  } catch (e) {
+    error.value = apiErr(e)
+    connecting.value = false
+  }
+}
+
+function startPoll() {
+  stopPoll()
+  poll = setInterval(async () => {
+    try {
+      const res = await flo.connectOsspace()
+      if (res.status === 'connected') {
+        stopPoll()
+        connecting.value = false
+        pendingUrl.value = ''
+        provisioned.value = true
+      }
+    } catch {
+      // Stay quiet during the poll; the user may still be authenticating.
+    }
+  }, 4000)
+}
+
+onMounted(() => {
+  if (!flo.loaded) flo.loadSettings()
+})
+onUnmounted(stopPoll)
 </script>
 
 <template>
@@ -113,23 +177,65 @@ async function test() {
     </p>
 
     <div v-show="open" class="mt-4">
-    <!-- Managed inflowenger space: read-only. -->
-    <div v-if="osctrl.managed" class="mb-4 rounded-md border border-line bg-surface-2 p-4">
+    <!-- Managed inflowenger space, provisioned through FloMorphic. -->
+    <div
+      class="mb-4 rounded-md border border-line bg-surface-2 p-4"
+      :class="{ 'opacity-60': !flo.configured && !osctrl.managed }"
+    >
       <div class="mb-2 flex items-center gap-2">
-        <span class="text-sm font-medium text-fg">Managed via your inflowenger space</span>
-        <span class="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">Managed</span>
+        <span class="text-sm font-medium text-fg">Managed osctrl space</span>
+        <span class="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">via FloMorphic</span>
       </div>
-      <dl class="grid grid-cols-[7rem_1fr] gap-y-1 text-sm">
-        <dt class="text-fg-muted">Host</dt>
-        <dd class="text-fg break-all">{{ osctrl.url || '—' }}</dd>
-        <dt class="text-fg-muted">Environment</dt>
-        <dd class="text-fg font-mono">{{ osctrl.environment || '—' }}</dd>
-        <dt class="text-fg-muted">Username</dt>
-        <dd class="text-fg">{{ osctrl.username || '—' }}</dd>
-      </dl>
-      <p class="mt-2 text-xs text-fg-subtle">
-        Provisioned through FloMorphic. Manage it in the osctrl panel, or connect your own instance below.
-      </p>
+
+      <!-- Already provisioned: read-only details. -->
+      <template v-if="osctrl.managed">
+        <dl class="grid grid-cols-[7rem_1fr] gap-y-1 text-sm">
+          <dt class="text-fg-muted">Host</dt>
+          <dd class="text-fg break-all">{{ osctrl.url || '—' }}</dd>
+          <dt class="text-fg-muted">Environment</dt>
+          <dd class="text-fg font-mono">{{ osctrl.environment || '—' }}</dd>
+          <dt class="text-fg-muted">Username</dt>
+          <dd class="text-fg">{{ osctrl.username || '—' }}</dd>
+        </dl>
+        <p class="mt-2 text-xs text-fg-subtle">
+          Provisioned once through FloMorphic. Clicking connect again just returns this same space — you can't
+          provision a second one. Manage it in the osctrl panel, or connect your own instance below.
+        </p>
+      </template>
+
+      <!-- Not yet provisioned: offer to create/connect the space. -->
+      <template v-else>
+        <p class="mb-3 text-xs text-fg-muted">
+          Provision a turnkey osctrl space for this install. You'll sign in with Google once; afterwards Nodes and
+          Enroll work directly against <span class="font-mono">osctrl.inflowenger.com</span>.
+        </p>
+
+        <p v-if="provisioned" class="mb-3 rounded-md bg-success-soft px-3 py-2 text-sm text-success">
+          osctrl space active — Nodes and Enroll are live. Environment
+          <span class="font-mono">{{ osctrl.environment || '—' }}</span>.
+        </p>
+        <p v-else-if="connecting" class="mb-3 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
+          Waiting for Google sign-in in the new tab… this page will update automatically once your space is ready.
+          <a v-if="pendingUrl" :href="pendingUrl" target="_blank" rel="noopener" class="text-accent hover:underline">
+            Reopen sign-in ↗
+          </a>
+        </p>
+
+        <button
+          v-if="!provisioned"
+          type="button"
+          class="btn-primary"
+          :disabled="!flo.configured || connecting"
+          @click="connect"
+        >
+          {{ connecting ? 'Waiting…' : 'Create / connect osctrl space' }}
+        </button>
+
+        <p class="mt-2 text-xs text-fg-subtle">
+          <template v-if="flo.configured">Works through FloMorphic — provisioning is brokered by the venapce plugin.</template>
+          <template v-else>Works with FloMorphic — connect the FloMorphic plugin above to enable this.</template>
+        </p>
+      </template>
     </div>
 
     <!-- Self-hosted (recommended). -->

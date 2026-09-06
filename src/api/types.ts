@@ -173,13 +173,74 @@ export interface OsctrlSettingsView {
   managed?: boolean
 }
 
-/** What GET/PUT /api/settings/flomorphic returns (the venapce plugin registration). */
+/** Live state of the in-process venapce plugin's connection to infra. */
+export interface PluginStatus {
+  /** Latched: we started the plugin and hold its connection. */
+  running: boolean
+  /** Live probe of the NATS socket to infra (re-evaluated on each read). */
+  connected: boolean
+  /** NATS connection state name: CONNECTED / RECONNECTING / CLOSED / … */
+  connState?: string
+  pluginId?: string
+  error?: string
+}
+
+/** Plugin connectivity as FloMorphic sees it — a live @actions round-trip through
+ *  FloMorphic (the reference for whether the plugin is connected). */
+export interface PluginProbe {
+  reachable: boolean
+  /** How many palette actions the plugin exposes (when reachable). */
+  actions?: number
+  error?: string
+}
+
+/** What GET /api/settings/flomorphic returns (the venapce plugin registration). */
 export interface FlomorphicSettingsView {
   configured: boolean
+  /** FloMorphic extension row id (present once registered). */
+  extensionId?: string
   pluginId?: string
   infraBase?: string
   /** True when a managed osctrl space has been provisioned + wired up. */
   osctrlManaged?: boolean
+  /** Live status of the in-process plugin (present once registered). */
+  plugin?: PluginStatus
+  /** FloMorphic API access, from the backend env (FLOMORPHIC_URL + FLOMORPHIC_JWT_SECRET). */
+  apiConfigured?: boolean
+  /** The configured FloMorphic API base URL (value is safe to show). */
+  apiUrl?: string
+  /** Whether the HS256 signing secret is set (the value is never returned). */
+  jwtSecretSet?: boolean
+}
+
+/** Outcome of registering/refreshing venapce in FloMorphic (PUT settings, or the
+ *  refresh route): the extension + plugin ids, how many palette nodes the sync
+ *  wrote, and any per-step error (registration is saved even when a later step
+ *  fails). */
+export interface FlomorphicConnectResult {
+  configured: boolean
+  extensionId?: string
+  pluginId?: string
+  /** Palette nodes written by the sync. */
+  nodes?: number
+  /** The plugin connected but sync failed (e.g. FloMorphic could not reach it). */
+  syncError?: string
+  /** The plugin failed to connect; nothing was synced. */
+  pluginError?: string
+  plugin?: PluginStatus
+  probe?: PluginProbe
+}
+
+/** Outcome of the plugin/check route: connectivity as FloMorphic sees it. */
+export interface FlomorphicCheckResult {
+  probe?: PluginProbe
+  plugin?: PluginStatus
+}
+
+/** One extra env var shipped in the minted plugin env. */
+export interface FlomorphicEnvVar {
+  key: string
+  value: string
 }
 
 /** Outcome of POST /api/settings/flomorphic/osspace (the osctrl-space broker). */
