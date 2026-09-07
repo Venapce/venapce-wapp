@@ -5,6 +5,8 @@ import type { Chart } from '@/api/types'
 import { toRenderModel, type RenderModel } from '@/lib/echartsOption'
 import ChartRenderer from '@/components/ChartRenderer.vue'
 import { apiErr } from '@/api/venapce'
+import Icon from '@/components/Icon.vue'
+import { vizIcon, vizName } from '@/lib/vizCatalog'
 
 // Renders one saved chart live: fetches its data through the backend proxy and
 // transforms it with the same renderer the builder uses.
@@ -36,9 +38,10 @@ defineExpose({ reload: load })
 
 <template>
   <div class="flex h-full flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-sm">
-    <div class="drag-handle flex items-center gap-2 border-b border-line px-3 py-2">
+    <div class="drag-handle flex cursor-move items-center gap-2 border-b border-line px-3 py-2">
+      <Icon :name="vizIcon(chart.vizType)" :size="15" class="text-fg-subtle" :title="vizName(chart.vizType)" />
       <span class="truncate text-xs font-semibold text-fg-muted">{{ chart.title }}</span>
-      <span class="chip ml-auto shrink-0 !px-1.5 !py-0.5 !text-[10px]">{{ chart.vizType }}</span>
+      <Icon name="grip" :size="14" class="ml-auto text-fg-subtle opacity-50" />
       <slot name="actions" />
     </div>
     <div class="min-h-0 flex-1 p-2">

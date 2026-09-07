@@ -6,6 +6,7 @@ import { useOsctrlStore } from '@/stores/osctrl'
 import { useFlomorphicStore } from '@/stores/flomorphic'
 import { useIssueViewsStore } from '@/stores/issueViews'
 import ThemeToggle from '@/components/ThemeToggle.vue'
+import Icon from '@/components/Icon.vue'
 import IssueViewDialog from '@/components/IssueViewDialog.vue'
 import type { IssueView } from '@/api/types'
 
@@ -17,15 +18,15 @@ const router = useRouter()
 
 // The dashboard workspace — everything here feeds building & viewing dashboards.
 const dashboardNav = [
-  { name: 'dashboards', label: 'Visualizations', icon: '▦' },
-  { name: 'builder', label: 'Chart Builder', icon: '◧' },
-  { name: 'datasets', label: 'Datasets', icon: '▤' },
+  { name: 'dashboards', label: 'Visualizations', icon: 'dashboard' },
+  { name: 'builder', label: 'Chart Builder', icon: 'chartBar' },
+  { name: 'datasets', label: 'Datasets', icon: 'database' },
 ]
 
 // Nodes (osctrl): enrolled systems and how to enroll new ones.
 const nodesNav = [
-  { name: 'nodes', label: 'Enrolled Nodes', icon: '🖥' },
-  { name: 'nodes-enroll', label: 'Enroll', icon: '＋' },
+  { name: 'nodes', label: 'Enrolled Nodes', icon: 'monitor' },
+  { name: 'nodes-enroll', label: 'Enroll', icon: 'plus' },
 ]
 
 // The add/edit saved-view dialog.
@@ -130,7 +131,7 @@ onMounted(() => {
             class="nav-item"
             active-class="is-active"
           >
-            <span class="w-4 text-center text-base">{{ item.icon }}</span>
+            <Icon :name="item.icon" :size="16" />
             {{ item.label }}
           </RouterLink>
 
@@ -145,7 +146,7 @@ onMounted(() => {
             class="nav-item"
             active-class="is-active"
           >
-            <span class="w-4 text-center text-base">{{ item.icon }}</span>
+            <Icon :name="item.icon" :size="16" />
             {{ item.label }}
           </RouterLink>
 
@@ -154,11 +155,11 @@ onMounted(() => {
             Issues
           </p>
           <RouterLink :to="{ name: 'stage' }" class="nav-item" active-class="is-active">
-            <span class="w-4 text-center text-base">⇥</span>
+            <Icon name="inbox" :size="16" />
             Stage
           </RouterLink>
           <RouterLink :to="{ name: 'issues' }" class="nav-item" active-class="is-active">
-            <span class="w-4 text-center text-base">◈</span>
+            <Icon name="flag" :size="16" />
             Issues
           </RouterLink>
 
@@ -174,29 +175,29 @@ onMounted(() => {
                 class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-fg-muted"
                 active-class="text-accent"
               >
-                <span class="text-fg-subtle">#</span>
+                <Icon name="hash" :size="13" class="text-fg-subtle" />
                 <span class="truncate">{{ v.name }}</span>
               </RouterLink>
               <button
-                class="hidden shrink-0 px-1 text-xs text-fg-subtle hover:text-accent group-hover:block"
+                class="icon-btn-plain hidden group-hover:inline-flex"
                 title="Edit view"
                 @click.prevent="openEditView(v)"
               >
-                ✎
+                <Icon name="pencil" :size="13" />
               </button>
               <button
-                class="hidden shrink-0 px-1 text-xs text-fg-subtle hover:text-danger group-hover:block"
+                class="icon-btn-plain icon-btn--danger hidden group-hover:inline-flex"
                 title="Delete view"
                 @click.prevent="deleteView(v)"
               >
-                ✕
+                <Icon name="trash" :size="13" />
               </button>
             </div>
             <button
               class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-fg-subtle hover:bg-accent-soft hover:text-accent"
               @click="openNewView"
             >
-              <span class="text-base leading-none">＋</span>
+              <Icon name="plus" :size="14" />
               Add view
             </button>
           </div>
@@ -205,7 +206,7 @@ onMounted(() => {
         <!-- Settings, pinned to the bottom -->
         <div class="border-t border-line p-2.5">
           <RouterLink :to="{ name: 'settings' }" class="nav-item" active-class="is-active">
-            <span class="w-4 text-center text-base">⚙</span>
+            <Icon name="settings" :size="16" />
             Settings
           </RouterLink>
           <RouterLink

@@ -86,7 +86,14 @@
     margin: 0;
     background: var(--bg);
     color: var(--fg);
+    /* Inter reads better with contextual alternates on and its slashed zero. */
+    font-feature-settings: 'cv05' 1, 'ss03' 1;
+    letter-spacing: -0.006em;
     @apply antialiased;
+  }
+  code,
+  pre {
+    @apply font-mono;
   }
 
   ::-webkit-scrollbar {
@@ -122,6 +129,50 @@
   .btn-outline {
     @apply btn border border-line-strong bg-surface text-fg-muted hover:border-accent-border hover:text-accent;
   }
+  .btn-danger {
+    @apply btn border border-line-strong bg-surface text-fg-muted
+      hover:border-danger hover:bg-danger-soft hover:text-danger;
+  }
+  /* Compact action button: an icon, optionally followed by a label. */
+  .btn-sm {
+    @apply btn gap-1.5 rounded-md px-2 py-1 text-xs;
+  }
+
+  /*
+    Icon buttons — the square, label-less form used for the chart toolbar. The
+    glyph is an <Icon>; the title attribute carries the name, so the button stays
+    readable to a screen reader and on hover.
+  */
+  .icon-btn {
+    @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line
+      bg-surface text-fg-muted transition-colors hover:border-accent-border hover:bg-accent-soft
+      hover:text-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-40
+      disabled:hover:border-line disabled:hover:bg-surface disabled:hover:text-fg-muted;
+  }
+  .icon-btn-sm {
+    @apply icon-btn h-7 w-7;
+  }
+  /* Borderless variant for dense rows (a chip's ✕, a list row's edit). */
+  .icon-btn-plain {
+    @apply inline-flex shrink-0 items-center justify-center rounded-md border border-transparent
+      bg-transparent p-1 text-fg-subtle transition-colors hover:bg-accent-soft hover:text-accent
+      focus:outline-none disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .icon-btn--active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .icon-btn--danger:hover,
+  .icon-btn-plain.icon-btn--danger:hover {
+    border-color: var(--danger);
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+  .icon-btn--primary {
+    @apply border-transparent bg-accent text-accent-fg hover:border-transparent hover:bg-accent-hover
+      hover:text-accent-fg;
+  }
   .field {
     @apply w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-fg
       outline-none transition-colors placeholder:text-fg-subtle focus:border-accent;
@@ -137,7 +188,17 @@
     box-shadow: var(--shadow-sm);
   }
   .chip {
-    @apply inline-flex items-center gap-1 rounded-full bg-accent-soft px-2.5 py-1 text-xs
+    @apply inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-1 text-xs
       font-medium text-accent;
+  }
+  /* Neutral counterpart of .chip — metadata that isn't the accent's business. */
+  .chip-muted {
+    @apply inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2 py-0.5 text-[11px]
+      font-medium text-fg-muted;
+  }
+  /* Figures line up column-wise: axis labels, table cells, big numbers. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
   }
 }

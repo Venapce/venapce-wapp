@@ -35,7 +35,7 @@ Senses (osquery agents, plugins)  →  FloMorphic workflows  →  Venapce backen
 | Area | What it shows |
 |------|----------------|
 | **Visualizations** | Native dashboards — drop in saved charts and **arrange** them on a drag/resize grid, then view them rendered natively (no iframe). |
-| **Chart Builder** | Pick a dataset → dimensions / metrics / filters → builds a `query_context`, renders with ECharts (bar/line/area/pie/table/big-number). **Save** persists the chart for dashboards to use. |
+| **Chart Builder** | Pick a dataset → per-chart controls → builds a `query_context`, renders with ECharts. Five common types sit inline; **View all charts** opens the full Superset catalogue (74 types, deprecated ones flagged). **Save** persists the chart for dashboards to use. |
 | **Datasets** | Browse the instance's databases and datasets, via the backend proxy. |
 | **Nodes** | The fleet — enrolled osquery systems (Linux/macOS/Windows) from **osctrl**, with online status and search, plus **Enroll** commands for new nodes. |
 | **Stage** | The pipeline inbox: raw, un-triaged rows every pipeline feeds in. A FloMorphic flow routes each (`pending` / `promoted` / `held` / `dropped`). |
@@ -67,15 +67,38 @@ Other scripts: `npm run build` (type-check + production build), `npm run preview
 The native-render pipeline (Superset data → ECharts pixels):
 
 ```
-ChartBuilderView.vue        builder UI (dataset, dims, metrics, filters, viz type)
-  └─ lib/builder.ts         BuilderState → Superset query_context
+ChartBuilderView.vue        builder UI (dataset, viz type, per-family controls)
+  └─ lib/builder.ts         BuilderState → Superset query_context (+ post_processing)
        └─ api/venapce.ts    POST /api/superset/chart/data  (backend proxy)
-            └─ lib/echartsOption.ts   result rows → ECharts `option`
+            └─ lib/echartsOption.ts   dispatch → lib/viz/<family>.ts → ECharts `option`
                  └─ ChartRenderer.vue  <v-chart :option> / table / big-number
 ```
 
+### Chart types
+
+The picker mirrors Superset's: five common types inline, the rest behind **View all
+charts**. Superset's viz registry is compile-time (no REST endpoint enumerates it), so
+[src/lib/vizCatalog.ts](src/lib/vizCatalog.ts) mirrors it — every type with its real
+`viz_type` key, category and deprecation flag. Entries marked *native* are rendered here;
+the rest are listed but not selectable, so the gap is visible rather than hidden.
+
+| Family | Engine | What it supports |
+|--------|--------|------------------|
+| **Time-series** (line / smooth / bar / area / step / scatter / big number with trendline) | [lib/viz/timeseries.ts](src/lib/viz/timeseries.ts) | Temporal x-axis with time grain and time range, series breakdown with a series limit, and the advanced analytics that become `post_processing` steps on the query — contribution mode, rolling window (mean/sum/std/cumsum), time shift with values/difference/percentage/ratio comparison, and resampling. Plus stacking, markers, value labels, log axis, bounds, zoom slider, legend placement. |
+| **Scatter / Bubble** | [lib/viz/scatter.ts](src/lib/viz/scatter.ts) | X, Y and an optional size metric (area-proportional bubbles), entity and colour dimensions, log axes, per-series least-squares trend line. |
+| **Histogram** | [lib/viz/histogram.ts](src/lib/viz/histogram.ts) | Shared bin edges across groups, grouped/stacked/overlaid display, normalisation and cumulative mode. Binned in the browser from the raw column, so it works against any Superset version. |
+| **Box plot** | [lib/viz/boxplot.ts](src/lib/viz/boxplot.ts) | Quartiles by interpolation, 1.5·IQR whiskers, outliers as points — one box per group. Shares the histogram's raw-value query. |
+| **Tree** | [lib/viz/tree.ts](src/lib/viz/tree.ts) | id/parent/name adjacency lists, orthogonal or radial layout, expand depth, pan &amp; zoom — with multi-root and cyclic-edge handling. |
+| **Categorical** (bar / line / area / pie / rose / funnel / radar / waterfall / treemap / sunburst / heatmap / sankey / graph / word cloud / gauge / table / pivot table / big number) | [lib/viz/categorical.ts](src/lib/viz/categorical.ts) | One query — N metrics over up to three dimensions — read a dozen ways. Bars flip horizontal and stack; pies turn into donuts and roses; treemap and sunburst roll the dimension list into a hierarchy; heatmap, sankey and graph cross two dimensions (the sankey drops cycle-closing links rather than failing); the pivot table cross-tabs with row totals; the word cloud is DOM, not canvas. |
+
+The raw query result is kept in the builder, so display-only controls (formats, bin count,
+tree layout, colours) re-render instantly — only query changes need a re-run.
+
 - [src/api/venapce.ts](src/api/venapce.ts) — the whole backend API surface (Superset proxy, charts, dashboards, nodes, stage, issues).
-- [src/lib/builder.ts](src/lib/builder.ts) — swap/extend viz types, aggregates, filter ops.
-- [src/lib/echartsOption.ts](src/lib/echartsOption.ts) — the row→chart transforms.
+- [src/lib/builder.ts](src/lib/builder.ts) — builder state, per-family `query_context` building, viz engines.
+- [src/lib/vizCatalog.ts](src/lib/vizCatalog.ts) — the chart-type catalogue behind the picker.
+- [src/lib/viz/](src/lib/viz/) — one row→`option` transform per chart family (`theme.ts` paints them light/dark).
+- [src/components/builder/](src/components/builder/) — the control panels, one per family, plus the chart-type dialog and the saved-chart library (open / remove).
+- [src/lib/icons.ts](src/lib/icons.ts) + [src/components/Icon.vue](src/components/Icon.vue) — the icon set: UI verbs and one drawn glyph per catalogue entry, all on one 24×24 stroked grid.
 - [src/components/AppShell.vue](src/components/AppShell.vue) — the main menu / layout.
 - [src/router/index.ts](src/router/index.ts) — routes and the Superset-config guard.

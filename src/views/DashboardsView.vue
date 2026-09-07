@@ -5,6 +5,8 @@ import { GridLayout, GridItem } from 'grid-layout-plus'
 import { useConnectionStore } from '@/stores/connection'
 import type { Chart, Dashboard, DashboardCell } from '@/api/types'
 import DashboardChartCard from '@/components/DashboardChartCard.vue'
+import Icon from '@/components/Icon.vue'
+import { vizIcon, vizName } from '@/lib/vizCatalog'
 import { apiErr } from '@/api/venapce'
 
 const conn = useConnectionStore()
@@ -217,7 +219,10 @@ onMounted(load)
           {{ d.title }}
           <span class="ml-1 text-[10px] opacity-60">{{ d.layout.length }}</span>
         </button>
-        <button class="badge-pill badge-pill--add" @click="createDashboard">＋ New</button>
+        <button class="badge-pill badge-pill--add" @click="createDashboard">
+          <Icon name="plus" :size="12" />
+          New
+        </button>
       </div>
     </header>
 
@@ -229,27 +234,33 @@ onMounted(load)
       class="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-6 py-2"
     >
       <h2 class="text-sm font-semibold text-fg">{{ active.title }}</h2>
-      <button class="icon-btn" title="Rename" @click="renameDashboard">✎</button>
-      <span v-if="dirty" class="text-xs text-warning">Unsaved changes</span>
+      <button class="icon-btn-sm" title="Rename dashboard" @click="renameDashboard">
+        <Icon name="pencil" :size="14" />
+      </button>
+      <span v-if="dirty" class="flex items-center gap-1.5 text-xs text-warning">
+        <Icon name="alert" :size="12" />
+        Unsaved changes
+      </span>
 
       <div class="ml-auto flex items-center gap-2">
         <button
-          class="icon-btn"
+          class="icon-btn-sm"
           :class="editMode ? 'icon-btn--active' : ''"
-          :title="editMode ? 'Done editing' : 'Edit charts'"
+          :title="editMode ? 'Done editing' : 'Arrange charts'"
           @click="toggleEdit"
         >
-          {{ editMode ? '✓' : '✎ Edit' }}
+          <Icon :name="editMode ? 'check' : 'sliders'" :size="14" />
         </button>
         <button
           v-if="editMode"
-          class="text-xs text-fg-subtle hover:text-danger"
+          class="icon-btn-sm icon-btn--danger"
           title="Delete dashboard"
           @click="removeDashboard"
         >
-          Delete
+          <Icon name="trash" :size="14" />
         </button>
         <button class="btn-primary !py-1 text-xs" :disabled="saving || !dirty" @click="save">
+          <Icon :name="saving ? 'refresh' : 'save'" :size="14" :class="saving ? 'animate-spin' : ''" />
           {{ saving ? 'Saving…' : 'Save' }}
         </button>
       </div>
@@ -274,10 +285,12 @@ onMounted(load)
             v-for="c in availableCharts"
             :key="c.id"
             class="flex w-full items-center gap-2 rounded-md border border-line px-3 py-2 text-left text-xs hover:border-accent-border hover:bg-accent-soft"
+            :title="`Add ${c.title} (${vizName(c.vizType)})`"
             @click="addChart(c)"
           >
+            <Icon :name="vizIcon(c.vizType)" :size="16" class="text-fg-muted" />
             <span class="truncate font-medium text-fg">{{ c.title }}</span>
-            <span class="chip ml-auto shrink-0 !px-1.5 !py-0.5 !text-[10px]">{{ c.vizType }}</span>
+            <Icon name="plus" :size="14" class="ml-auto text-fg-subtle" />
           </button>
         </div>
         <p class="mt-4 text-[11px] leading-relaxed text-fg-subtle">
@@ -332,12 +345,12 @@ onMounted(load)
             <DashboardChartCard v-if="chartsById[it.chartId]" :chart="chartsById[it.chartId]">
               <template v-if="editMode" #actions>
                 <button
-                  class="shrink-0 text-fg-subtle hover:text-danger"
-                  title="Remove"
+                  class="icon-btn-plain icon-btn--danger"
+                  title="Remove from dashboard"
                   @pointerdown.stop
                   @click="removeItem(it.i)"
                 >
-                  ✕
+                  <Icon name="close" :size="14" />
                 </button>
               </template>
             </DashboardChartCard>
@@ -345,8 +358,16 @@ onMounted(load)
               v-else
               class="flex h-full items-center justify-center rounded-lg border border-dashed border-line-strong bg-surface text-xs text-fg-subtle"
             >
+              <Icon name="alert" :size="14" class="mr-1.5" />
               chart #{{ it.chartId }} was deleted
-              <button v-if="editMode" class="ml-2 text-danger" @click="removeItem(it.i)">remove</button>
+              <button
+                v-if="editMode"
+                class="icon-btn-plain icon-btn--danger ml-1.5"
+                title="Remove from dashboard"
+                @click="removeItem(it.i)"
+              >
+                <Icon name="close" :size="14" />
+              </button>
             </div>
           </GridItem>
         </GridLayout>
@@ -365,14 +386,6 @@ onMounted(load)
   color: var(--accent);
 }
 .badge-pill--add {
-  @apply border-dashed text-fg-subtle;
-}
-.icon-btn {
-  @apply rounded-md border border-line px-2 py-1 text-xs font-medium text-fg-muted transition-colors hover:border-accent-border hover:text-fg;
-}
-.icon-btn--active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
+  @apply inline-flex items-center gap-1.5 border-dashed text-fg-subtle;
 }
 </style>

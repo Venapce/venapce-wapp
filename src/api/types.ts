@@ -72,17 +72,53 @@ export type AdhocMetric =
 
 export interface QueryFilter {
   col: string
-  op: string // '==', '!=', '>', '<', '>=', '<=', 'LIKE', 'IN', 'IS NOT NULL', ...
+  op: string // '==', '!=', '>', '<', '>=', '<=', 'LIKE', 'IN', 'TEMPORAL_RANGE', 'IS NOT NULL', ...
   val?: string | number | Array<string | number> | null
 }
 
+/**
+ * An ad-hoc column, i.e. a grouping expression that is more than a plain column
+ * name. Superset uses this shape for the x-axis of a time-series chart: the
+ * `BASE_AXIS` marker plus a `timeGrain` is what makes the backend bucket the
+ * column (`DATE_TRUNC`-style) before grouping.
+ */
+export interface AdhocColumn {
+  expressionType: 'SQL'
+  sqlExpression: string
+  label: string
+  columnType?: 'BASE_AXIS' | 'SERIES'
+  timeGrain?: string
+}
+
+export type QueryColumn = string | AdhocColumn
+
+/** One entry of a query's `post_processing` chain (a pandas step run by Superset). */
+export interface PostProcessingOp {
+  operation: string
+  options?: Record<string, unknown>
+}
+
 export interface QueryObject {
-  columns: string[]
+  columns: QueryColumn[]
   metrics: AdhocMetric[]
   filters: QueryFilter[]
   row_limit: number
   orderby?: Array<[AdhocMetric, boolean]>
   order_desc?: boolean
+  /** Engine-level extras — `time_grain_sqla` buckets a temporal x-axis. */
+  extras?: { time_grain_sqla?: string; where?: string; having?: string }
+  /** True for a chart whose x-axis is time (Superset skips row-limit sorting then). */
+  is_timeseries?: boolean
+  /** Series breakdown columns, i.e. `columns` minus the base axis. */
+  series_columns?: QueryColumn[]
+  /** Keep only the top-N series (0 = all), ranked by `series_limit_metric`. */
+  series_limit?: number
+  series_limit_metric?: AdhocMetric
+  /** Time shifts to fetch alongside the main series ('1 year ago', …). */
+  time_offsets?: string[]
+  /** Pandas steps Superset applies to the result frame (pivot / rolling / …). */
+  post_processing?: PostProcessingOp[]
+  annotation_layers?: unknown[]
 }
 
 export interface QueryContext {
@@ -93,6 +129,12 @@ export interface QueryContext {
   result_format: 'json'
   result_type: 'full'
 }
+
+/** Superset's `GenericDataType` — the per-column type tag in `coltypes`. */
+export const COLTYPE_NUMERIC = 0
+export const COLTYPE_STRING = 1
+export const COLTYPE_TEMPORAL = 2
+export const COLTYPE_BOOLEAN = 3
 
 /** One entry of the /chart/data response `result` array. */
 export interface ChartDataResult {

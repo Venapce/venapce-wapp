@@ -1,30 +1,51 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useConnectionStore } from '@/stores/connection'
 import { apiErr } from '@/api/venapce'
-import type { DatasetDetail, DatasetSummary } from '@/api/types'
+import type { Chart, ChartDataResult, DatasetDetail, DatasetSummary } from '@/api/types'
 import {
-  AGGREGATES,
   FILTER_OPS,
-  VIZ_TYPES,
+  applyVizDefaults,
   buildQueryContext,
+  countMetric,
+  defaultVizFor,
   emptyBuilder,
-  type Aggregate,
+  normalizeState,
+  vizEngine,
   type MetricSpec,
+  type VizType,
 } from '@/lib/builder'
-import { toRenderModel, type RenderModel } from '@/lib/echartsOption'
+import { vizEntry } from '@/lib/vizCatalog'
+import { toRenderModel } from '@/lib/echartsOption'
 import ChartRenderer from '@/components/ChartRenderer.vue'
+import Icon from '@/components/Icon.vue'
+import VizTypePicker from '@/components/builder/VizTypePicker.vue'
+import MetricEditor from '@/components/builder/MetricEditor.vue'
+import ControlSection from '@/components/builder/ControlSection.vue'
+import CategoricalControls from '@/components/builder/CategoricalControls.vue'
+import TimeSeriesControls from '@/components/builder/TimeSeriesControls.vue'
+import ScatterControls from '@/components/builder/ScatterControls.vue'
+import HistogramControls from '@/components/builder/HistogramControls.vue'
+import TreeControls from '@/components/builder/TreeControls.vue'
+import SavedChartsDialog from '@/components/builder/SavedChartsDialog.vue'
 
 const conn = useConnectionStore()
 const client = computed(() => conn.client)
 const route = useRoute()
+const router = useRouter()
 
 // Saved-chart state: title, the persisted id (null until first save), status.
 const title = ref('')
 const savedId = ref<number | null>(null)
 const saving = ref(false)
 const saveMsg = ref('')
+
+// The saved-chart library: opened from the toolbar, where charts are also removed.
+const charts = ref<Chart[]>([])
+const showLibrary = ref(false)
+const deletingId = ref<number | null>(null)
+const libraryError = ref('')
 
 const datasets = ref<DatasetSummary[]>([])
 const detail = ref<DatasetDetail | null>(null)
@@ -33,10 +54,16 @@ const loadingDetail = ref(false)
 
 const state = reactive(emptyBuilder())
 
-const model = ref<RenderModel | null>(null)
+// The raw result is kept, so display-only controls (colours, formats, bins,
+// tree layout…) re-render instantly and only query changes need a re-run.
+const result = ref<ChartDataResult | null>(null)
+const model = computed(() => (result.value ? toRenderModel(state, result.value) : null))
 const running = ref(false)
 const error = ref('')
 const showQuery = ref(false)
+
+const engine = computed(() => vizEngine(state.vizType))
+const entry = computed(() => vizEntry(state.vizType))
 
 // ---- columns / metrics available from the chosen dataset ----
 const groupbyColumns = computed(() => (detail.value?.columns ?? []).filter((c) => c.groupby !== false))
@@ -51,20 +78,40 @@ const queryContext = computed(() => {
   }
 })
 
+/** Why the Run button is disabled, in the words of the control that's missing. */
+const blocker = computed(() => {
+  if (state.datasetId == null) return 'Pick a dataset'
+  try {
+    buildQueryContext(state)
+    return ''
+  } catch (e) {
+    return (e as Error).message
+  }
+})
+
 // ---- lifecycle ----
 onMounted(async () => {
-  await loadDatasets()
+  await Promise.all([loadDatasets(), loadCharts()])
   const cid = Number(route.query.chartId)
   if (cid) await restoreChart(cid)
 })
+
+async function loadCharts() {
+  try {
+    charts.value = await client.value.listCharts()
+  } catch (e) {
+    libraryError.value = apiErr(e)
+  }
+}
 
 // Load a saved chart back into the builder for editing (?chartId=…).
 async function restoreChart(id: number) {
   try {
     const chart = await client.value.getChart(id)
-    Object.assign(state, chart.builderState)
+    Object.assign(state, normalizeState(chart.builderState))
     title.value = chart.title
     savedId.value = chart.id
+    saveMsg.value = ''
     if (state.datasetId != null) {
       loadingDetail.value = true
       detail.value = await client.value.dataset(state.datasetId)
@@ -74,6 +121,44 @@ async function restoreChart(id: number) {
   } catch (e) {
     error.value = errMsg(e)
   }
+}
+
+/** Open a chart from the library, keeping ?chartId= in step with the builder. */
+async function openChart(chart: Chart) {
+  showLibrary.value = false
+  if (chart.id === savedId.value) return
+  await restoreChart(chart.id)
+  router.replace({ query: { ...route.query, chartId: String(chart.id) } })
+}
+
+/** Drop a saved chart. If it is the one on screen, the builder keeps the
+ *  configuration but forgets the id — the next save creates a new chart. */
+async function deleteChart(chart: Chart) {
+  deletingId.value = chart.id
+  libraryError.value = ''
+  try {
+    await client.value.deleteChart(chart.id)
+    charts.value = charts.value.filter((c) => c.id !== chart.id)
+    if (savedId.value === chart.id) {
+      savedId.value = null
+      saveMsg.value = 'Chart removed'
+      const { chartId: _dropped, ...rest } = route.query
+      router.replace({ query: rest })
+    }
+  } catch (e) {
+    libraryError.value = apiErr(e)
+  } finally {
+    deletingId.value = null
+  }
+}
+
+/** Start a fresh chart from the current dataset, leaving the saved one alone. */
+function newChart() {
+  savedId.value = null
+  title.value = ''
+  saveMsg.value = ''
+  const { chartId: _dropped, ...rest } = route.query
+  router.replace({ query: rest })
 }
 
 // Persist the current builder state as a native Venapce chart (create or update).
@@ -86,7 +171,7 @@ async function saveChart() {
   saveMsg.value = ''
   try {
     const body = {
-      title: title.value.trim() || `${detail.value?.table_name ?? 'chart'} · ${state.vizType}`,
+      title: title.value.trim() || `${detail.value?.table_name ?? 'chart'} · ${entry.value?.name ?? state.vizType}`,
       vizType: state.vizType,
       queryContext: buildQueryContext(state),
       builderState: JSON.parse(JSON.stringify(state)),
@@ -97,6 +182,10 @@ async function saveChart() {
     savedId.value = chart.id
     title.value = chart.title
     saveMsg.value = 'Saved'
+    // Keep the library in step so a fresh save is immediately removable there.
+    const i = charts.value.findIndex((c) => c.id === chart.id)
+    if (i === -1) charts.value.push(chart)
+    else charts.value[i] = chart
   } catch (e) {
     saveMsg.value = apiErr(e)
   } finally {
@@ -117,15 +206,20 @@ async function loadDatasets() {
 
 async function selectDataset(id: number) {
   state.datasetId = id
-  state.dimensions = []
   loadingDetail.value = true
-  model.value = null
+  result.value = null
+  error.value = ''
   try {
     detail.value = await client.value.dataset(id)
-    // Sensible defaults: first groupby col as dimension, COUNT(*) metric.
-    const firstDim = groupbyColumns.value[0]?.column_name
-    state.dimensions = firstDim ? [firstDim] : []
-    state.metrics = [{ kind: 'sql', sql: 'COUNT(*)', label: 'count' }]
+    // Reset the per-viz controls — they name columns of the previous dataset.
+    Object.assign(state, {
+      ...emptyBuilder(),
+      datasetId: id,
+      rowLimit: state.rowLimit,
+      vizType: defaultVizFor(detail.value.columns),
+    })
+    state.metrics = [countMetric()]
+    applyVizDefaults(state, detail.value.columns)
     await run()
   } catch (e) {
     error.value = errMsg(e)
@@ -134,40 +228,37 @@ async function selectDataset(id: number) {
   }
 }
 
+function selectViz(v: VizType) {
+  state.vizType = v
+  applyVizDefaults(state, allColumns.value)
+  if (state.datasetId != null) run()
+}
+
 async function run() {
   if (state.datasetId == null) return
   running.value = true
   error.value = ''
   try {
-    const result = await client.value.chartData(buildQueryContext(state))
-    model.value = toRenderModel(state, result)
+    result.value = await client.value.chartData(buildQueryContext(state))
   } catch (e) {
     error.value = errMsg(e)
-    model.value = null
+    result.value = null
   } finally {
     running.value = false
   }
 }
 
-// ---- dimension helpers ----
-function toggleDimension(col: string) {
-  const i = state.dimensions.indexOf(col)
-  if (i >= 0) state.dimensions.splice(i, 1)
-  else state.dimensions.push(col)
-}
-
-// ---- metric helpers ----
+// ---- metric helpers (the multi-metric families) ----
 function addMetric() {
   const col = allColumns.value[0]?.column_name
-  state.metrics.push(col ? { kind: 'simple', column: col, aggregate: 'SUM' } : { kind: 'sql', sql: 'COUNT(*)', label: 'count' })
+  state.metrics.push(col ? { kind: 'simple', column: col, aggregate: 'SUM' } : countMetric())
 }
 function removeMetric(i: number) {
   state.metrics.splice(i, 1)
 }
-function setMetricKind(kind: MetricSpec['kind'], i: number) {
-  if (kind === 'saved') state.metrics[i] = { kind: 'saved', name: savedMetrics.value[0]?.metric_name ?? '' }
-  else if (kind === 'sql') state.metrics[i] = { kind: 'sql', sql: 'COUNT(*)', label: 'count' }
-  else state.metrics[i] = { kind: 'simple', column: allColumns.value[0]?.column_name ?? '', aggregate: 'SUM' }
+function setMetric(i: number, m: MetricSpec | null) {
+  if (m) state.metrics[i] = m
+  else removeMetric(i)
 }
 
 // ---- filter helpers ----
@@ -177,15 +268,6 @@ function addFilter() {
 function removeFilter(i: number) {
   state.filters.splice(i, 1)
 }
-
-// Re-run automatically when the viz type flips (cheap, no re-query needed sometimes,
-// but the transform depends on state so we just re-query for correctness).
-watch(
-  () => state.vizType,
-  () => {
-    if (model.value || state.datasetId != null) run()
-  },
-)
 
 function errMsg(e: unknown): string {
   const err = e as { response?: { data?: { message?: string } }; message?: string }
@@ -197,12 +279,20 @@ function errMsg(e: unknown): string {
   <div class="grid h-full grid-cols-[340px_1fr]">
     <!-- ============ CONFIG PANEL ============ -->
     <section class="flex flex-col overflow-y-auto border-r border-line bg-surface">
-      <header class="border-b border-line px-4 py-3">
-        <h2 class="text-sm font-semibold text-fg">Chart Builder</h2>
-        <p class="text-xs text-fg-subtle">Data comes live from Superset · rendered by ECharts</p>
+      <header class="flex items-center gap-2 border-b border-line px-4 py-3">
+        <div class="min-w-0">
+          <h2 class="text-sm font-semibold text-fg">Chart Builder</h2>
+          <p class="truncate text-xs text-fg-subtle">Live Superset data · rendered by ECharts</p>
+        </div>
+        <button class="icon-btn-sm ml-auto" title="Saved charts" @click="showLibrary = true">
+          <Icon name="folder" :size="15" />
+        </button>
+        <button class="icon-btn-sm" title="New chart" :disabled="!savedId && !title" @click="newChart">
+          <Icon name="plus" :size="15" />
+        </button>
       </header>
 
-      <div class="space-y-5 p-4">
+      <div class="space-y-4 p-4">
         <!-- Dataset -->
         <div>
           <label class="label">Dataset</label>
@@ -220,100 +310,75 @@ function errMsg(e: unknown): string {
         </div>
 
         <template v-if="detail">
-          <!-- Viz type -->
-          <div>
-            <label class="label">Visualization</label>
-            <div class="grid grid-cols-3 gap-2">
-              <button
-                v-for="v in VIZ_TYPES"
-                :key="v.value"
-                class="flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-xs"
-                :class="
-                  state.vizType === v.value
-                    ? 'border-accent-border bg-accent-soft text-accent'
-                    : 'border-line text-fg-muted hover:bg-bg'
-                "
-                @click="state.vizType = v.value"
-              >
-                <span class="text-base">{{ v.icon }}</span>{{ v.label }}
-              </button>
-            </div>
-          </div>
+          <!-- Viz type: five tiles + the full catalogue dialog -->
+          <VizTypePicker :model-value="state.vizType" @update:model-value="selectViz" />
 
-          <!-- Dimensions -->
-          <div v-if="state.vizType !== 'big_number'">
-            <label class="label">Dimensions (group by)</label>
-            <div class="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-line p-2">
-              <button
-                v-for="c in groupbyColumns"
-                :key="c.column_name"
-                class="rounded-full px-2.5 py-1 text-xs"
-                :class="
-                  state.dimensions.includes(c.column_name)
-                    ? 'bg-accent text-accent-fg'
-                    : 'bg-surface-2 text-fg-muted hover:bg-surface-2'
-                "
-                @click="toggleDimension(c.column_name)"
-              >
-                {{ c.column_name }}
-              </button>
-            </div>
-          </div>
+          <!-- ---- per-family controls ---- -->
+          <TimeSeriesControls
+            v-if="engine === 'timeseries'"
+            :state="state"
+            :columns="allColumns"
+            :groupby-columns="groupbyColumns"
+            :saved-metrics="savedMetrics"
+          />
+          <ScatterControls
+            v-else-if="engine === 'scatter'"
+            :state="state"
+            :columns="allColumns"
+            :groupby-columns="groupbyColumns"
+            :saved-metrics="savedMetrics"
+          />
+          <HistogramControls
+            v-else-if="engine === 'histogram'"
+            :state="state"
+            :columns="allColumns"
+            :groupby-columns="groupbyColumns"
+          />
+          <TreeControls
+            v-else-if="engine === 'tree'"
+            :state="state"
+            :columns="allColumns"
+            :groupby-columns="groupbyColumns"
+            :saved-metrics="savedMetrics"
+          />
+          <CategoricalControls v-else :state="state" :groupby-columns="groupbyColumns" />
 
-          <!-- Metrics -->
-          <div>
+          <!-- Metrics — shared by the categorical and time-series families -->
+          <div v-if="engine === 'categorical' || engine === 'timeseries'">
             <div class="mb-1 flex items-center justify-between">
               <label class="label mb-0">Metrics</label>
-              <button class="text-xs font-medium text-accent hover:underline" @click="addMetric">+ Add</button>
+              <button class="icon-btn-sm" title="Add metric" @click="addMetric">
+                <Icon name="plus" :size="14" />
+              </button>
             </div>
             <div class="space-y-2">
-              <div v-for="(m, i) in state.metrics" :key="i" class="rounded-md border border-line p-2">
-                <div class="mb-2 flex items-center gap-2">
-                  <select
-                    class="field !py-1 !text-xs"
-                    :value="m.kind"
-                    @change="setMetricKind(($event.target as HTMLSelectElement).value as MetricSpec['kind'], i)"
-                  >
-                    <option value="simple">Aggregate</option>
-                    <option value="saved" :disabled="!savedMetrics.length">Saved metric</option>
-                    <option value="sql">Custom SQL</option>
-                  </select>
-                  <button class="ml-auto text-fg-subtle hover:text-danger" @click="removeMetric(i)">✕</button>
-                </div>
-
-                <div v-if="m.kind === 'simple'" class="flex gap-2">
-                  <select v-model="m.aggregate" class="field !py-1 !text-xs">
-                    <option v-for="a in AGGREGATES" :key="a" :value="a as Aggregate">{{ a }}</option>
-                  </select>
-                  <select v-model="m.column" class="field !py-1 !text-xs">
-                    <option v-for="c in allColumns" :key="c.column_name" :value="c.column_name">
-                      {{ c.column_name }}
-                    </option>
-                  </select>
-                </div>
-
-                <div v-else-if="m.kind === 'saved'">
-                  <select v-model="m.name" class="field !py-1 !text-xs">
-                    <option v-for="sm in savedMetrics" :key="sm.metric_name" :value="sm.metric_name">
-                      {{ sm.verbose_name || sm.metric_name }}
-                    </option>
-                  </select>
-                </div>
-
-                <div v-else class="space-y-1.5">
-                  <input v-model="m.sql" class="field !py-1 !text-xs" placeholder="COUNT(*)" />
-                  <input v-model="m.label" class="field !py-1 !text-xs" placeholder="label" />
-                </div>
+              <div v-for="(m, i) in state.metrics" :key="i" class="relative">
+                <MetricEditor
+                  :model-value="m"
+                  :columns="allColumns"
+                  :saved-metrics="savedMetrics"
+                  @update:model-value="setMetric(i, $event)"
+                />
+                <button
+                  class="icon-btn-plain icon-btn--danger absolute right-1.5 top-1.5"
+                  title="Remove metric"
+                  @click="removeMetric(i)"
+                >
+                  <Icon name="trash" :size="14" />
+                </button>
               </div>
+              <p v-if="!state.metrics.length" class="text-xs text-fg-subtle">
+                No metrics — a table will return raw records.
+              </p>
             </div>
           </div>
 
           <!-- Filters -->
-          <div>
-            <div class="mb-1 flex items-center justify-between">
-              <label class="label mb-0">Filters</label>
-              <button class="text-xs font-medium text-accent hover:underline" @click="addFilter">+ Add</button>
-            </div>
+          <ControlSection title="Filters" :open="state.filters.length > 0">
+            <button class="btn-sm btn-outline" @click="addFilter">
+              <Icon name="filter" :size="13" />
+              Add filter
+            </button>
             <div class="space-y-2">
               <div v-for="(f, i) in state.filters" :key="i" class="flex items-center gap-1.5">
                 <select v-model="f.col" class="field !py-1 !text-xs">
@@ -330,16 +395,18 @@ function errMsg(e: unknown): string {
                   :disabled="f.op === 'IS NULL' || f.op === 'IS NOT NULL'"
                   placeholder="value"
                 />
-                <button class="text-fg-subtle hover:text-danger" @click="removeFilter(i)">✕</button>
+                <button class="icon-btn-plain icon-btn--danger" title="Remove filter" @click="removeFilter(i)">
+                  <Icon name="trash" :size="14" />
+                </button>
               </div>
             </div>
-          </div>
+          </ControlSection>
 
           <!-- Row limit + order -->
           <div class="flex items-end gap-3">
             <div class="flex-1">
               <label class="label">Row limit</label>
-              <input v-model.number="state.rowLimit" type="number" min="1" class="field !py-1.5" />
+              <input v-model.number="state.rowLimit" type="number" min="1" class="field tabular !py-1.5" />
             </div>
             <label class="flex items-center gap-2 pb-2 text-xs text-fg-muted">
               <input v-model="state.orderDesc" type="checkbox" class="rounded border-line-strong" />
@@ -347,41 +414,68 @@ function errMsg(e: unknown): string {
             </label>
           </div>
 
-          <button class="btn-primary w-full" :disabled="running" @click="run">
-            {{ running ? 'Running…' : 'Run query' }}
-          </button>
+          <div>
+            <button class="btn-primary w-full" :disabled="running || !!blocker" @click="run">
+              <Icon :name="running ? 'refresh' : 'play'" :size="15" :class="running ? 'animate-spin' : ''" />
+              {{ running ? 'Running…' : 'Run query' }}
+            </button>
+            <p v-if="blocker" class="mt-1.5 flex items-center justify-center gap-1.5 text-[11px] text-warning">
+              <Icon name="alert" :size="12" />
+              {{ blocker }}
+            </p>
+          </div>
         </template>
       </div>
     </section>
 
     <!-- ============ PREVIEW ============ -->
     <section class="flex min-w-0 flex-col bg-bg">
-      <header class="flex items-center gap-3 border-b border-line bg-surface px-5 py-3">
+      <header class="flex items-center gap-2.5 border-b border-line bg-surface px-5 py-2.5">
         <h3 class="text-sm font-semibold text-fg">Preview</h3>
-        <span v-if="detail" class="chip">{{ detail.table_name }}</span>
+        <span v-if="detail" class="chip-muted">
+          <Icon name="database" :size="12" />
+          {{ detail.table_name }}
+        </span>
+        <span v-if="entry" class="chip">
+          <Icon :name="entry.icon" :size="13" />
+          {{ entry.name }}
+        </span>
+
         <div class="ml-auto flex items-center gap-2">
-          <input v-model="title" class="field w-44 !py-1 !text-xs" placeholder="Chart title" />
+          <input v-model="title" class="field w-48 !py-1.5 !text-xs" placeholder="Chart title" />
+
           <button
-            class="btn-primary !px-3 !py-1 text-xs"
+            class="icon-btn icon-btn--primary"
+            :title="savedId ? 'Update chart' : 'Save chart'"
             :disabled="saving || state.datasetId == null"
             @click="saveChart"
           >
-            {{ saving ? 'Saving…' : savedId ? 'Update' : 'Save chart' }}
+            <Icon :name="saving ? 'refresh' : 'save'" :size="16" :class="saving ? 'animate-spin' : ''" />
           </button>
-          <span
-            v-if="saveMsg"
-            class="text-xs"
-            :class="saveMsg === 'Saved' ? 'text-success' : 'text-danger'"
-          >
-            {{ saveMsg }}
-          </span>
+          <button class="icon-btn" title="Saved charts" @click="showLibrary = true">
+            <Icon name="folder" :size="16" />
+          </button>
+          <button class="icon-btn" title="Re-run the query" :disabled="running || !!blocker" @click="run">
+            <Icon name="refresh" :size="16" :class="running ? 'animate-spin' : ''" />
+          </button>
           <button
-            class="btn-ghost !px-2 !py-1 text-xs"
+            class="icon-btn"
+            :class="showQuery ? 'icon-btn--active' : ''"
+            :title="showQuery ? 'Hide query_context' : 'Inspect query_context'"
             :disabled="!queryContext"
             @click="showQuery = !showQuery"
           >
-            {{ showQuery ? 'Hide' : 'View' }} query_context
+            <Icon name="code" :size="16" />
           </button>
+
+          <span
+            v-if="saveMsg"
+            class="flex items-center gap-1.5 text-xs"
+            :class="saveMsg === 'Saved' ? 'text-success' : 'text-danger'"
+          >
+            <Icon :name="saveMsg === 'Saved' ? 'check' : 'alert'" :size="13" />
+            {{ saveMsg }}
+          </span>
         </div>
       </header>
 
@@ -396,5 +490,16 @@ function errMsg(e: unknown): string {
         <pre class="text-xs leading-relaxed text-fg">{{ JSON.stringify(queryContext, null, 2) }}</pre>
       </div>
     </section>
+
+    <SavedChartsDialog
+      :open="showLibrary"
+      :charts="charts"
+      :current-id="savedId"
+      :busy-id="deletingId"
+      :error="libraryError"
+      @close="showLibrary = false"
+      @open="openChart"
+      @delete="deleteChart"
+    />
   </div>
 </template>
