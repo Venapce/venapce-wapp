@@ -34,7 +34,7 @@ function patch(part: Partial<Record<string, unknown>>) {
     <div class="mb-2 flex items-center gap-2">
       <span v-if="label" class="text-[11px] font-semibold text-fg-muted">{{ label }}</span>
       <select
-        class="field ml-auto w-32 !py-1 !text-xs"
+        class="field min-w-0 flex-1 !py-1 !text-xs"
         :value="modelValue?.kind ?? 'none'"
         @change="setKind(($event.target as HTMLSelectElement).value as MetricSpec['kind'] | 'none')"
       >
@@ -43,6 +43,8 @@ function patch(part: Partial<Record<string, unknown>>) {
         <option value="saved" :disabled="!savedMetrics.length">Saved metric</option>
         <option value="sql">Custom SQL</option>
       </select>
+      <!-- Row actions (e.g. remove) sit beside the select, never over it. -->
+      <slot name="actions" />
     </div>
 
     <div v-if="modelValue?.kind === 'simple'" class="flex gap-2">

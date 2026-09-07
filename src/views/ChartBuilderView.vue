@@ -352,21 +352,20 @@ function errMsg(e: unknown): string {
               </button>
             </div>
             <div class="space-y-2">
-              <div v-for="(m, i) in state.metrics" :key="i" class="relative">
-                <MetricEditor
-                  :model-value="m"
-                  :columns="allColumns"
-                  :saved-metrics="savedMetrics"
-                  @update:model-value="setMetric(i, $event)"
-                />
-                <button
-                  class="icon-btn-plain icon-btn--danger absolute right-1.5 top-1.5"
-                  title="Remove metric"
-                  @click="removeMetric(i)"
-                >
-                  <Icon name="trash" :size="14" />
-                </button>
-              </div>
+              <MetricEditor
+                v-for="(m, i) in state.metrics"
+                :key="i"
+                :model-value="m"
+                :columns="allColumns"
+                :saved-metrics="savedMetrics"
+                @update:model-value="setMetric(i, $event)"
+              >
+                <template #actions>
+                  <button class="icon-btn-plain icon-btn--danger" title="Remove metric" @click="removeMetric(i)">
+                    <Icon name="trash" :size="14" />
+                  </button>
+                </template>
+              </MetricEditor>
               <p v-if="!state.metrics.length" class="text-xs text-fg-subtle">
                 No metrics — a table will return raw records.
               </p>
