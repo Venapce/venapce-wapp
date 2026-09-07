@@ -19,8 +19,8 @@ import type {
   OsctrlEnvironment,
   OsctrlLinkAction,
   OsctrlLinkTarget,
-  OsctrlNode,
   OsctrlNodeDetail,
+  OsctrlNodesPage,
   OsctrlSettingsView,
   OsspaceResult,
   QueryContext,
@@ -240,10 +240,20 @@ export class VenapceClient {
     const { data } = await this.http.get('/api/osctrl/environments')
     return data
   }
-  async osctrlNodes(env: string, search = ''): Promise<OsctrlNode[]> {
-    const { data } = await this.http.get('/api/osctrl/nodes', {
-      params: { env, ...(search ? { search } : {}) },
-    })
+  /**
+   * One page of enrolled nodes for an environment. The backend proxies osctrl's
+   * paginated endpoint, so the browser pages through large environments instead
+   * of pulling every node at once. `search` maps to osctrl's `q` free-text match.
+   */
+  async osctrlNodes(
+    env: string,
+    opts: { page?: number; pageSize?: number; search?: string } = {},
+  ): Promise<OsctrlNodesPage> {
+    const params: Record<string, string | number> = { env }
+    if (opts.page) params.page = opts.page
+    if (opts.pageSize) params.page_size = opts.pageSize
+    if (opts.search) params.q = opts.search
+    const { data } = await this.http.get('/api/osctrl/nodes', { params })
     return data
   }
   /** Full detail for one node (osctrl exposes a rich per-node record). */

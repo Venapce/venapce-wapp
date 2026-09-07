@@ -299,6 +299,17 @@ export interface OsctrlNodeDetail extends OsctrlNode {
   tags?: string[]
 }
 
+/** One page of enrolled nodes (osctrl GET /nodes/{env}, its canonical paginated
+ *  endpoint). The front pages through this rather than pulling every node at once,
+ *  since an environment can hold far more than one screenful. */
+export interface OsctrlNodesPage {
+  items: OsctrlNode[]
+  page: number
+  page_size: number
+  total_items: number
+  total_pages: number
+}
+
 /** An action osctrl accepts on an enroll/remove link for an environment. */
 export type OsctrlLinkAction = 'rotate' | 'extend' | 'expire' | 'notexpire'
 

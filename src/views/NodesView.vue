@@ -2,9 +2,9 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useOsctrlStore } from '@/stores/osctrl'
+import { apiErr } from '@/api/venapce'
 import { isOnline, relativeTime } from '@/lib/format'
 import OsIcon from '@/components/OsIcon.vue'
-import { sampleEnvironments, sampleNodeDetail, sampleNodes } from '@/lib/samples'
 import type { OsctrlEnvironment, OsctrlNode, OsctrlNodeDetail } from '@/api/types'
 
 // Enrolled systems (osquery nodes) for the selected osctrl environment.
@@ -17,25 +17,25 @@ const nodes = ref<OsctrlNode[]>([])
 const search = ref('')
 const loading = ref(true)
 const error = ref('')
-// True when the backend osctrl proxy isn't reachable yet and we're showing the
-// built-in sample set so the UI is reviewable.
-const sample = ref(false)
+
+// ---- pagination ----
+// osctrl can enroll far more than one screen of nodes, so we page through its
+// paginated endpoint rather than pulling everything. Search is sent to the
+// server (osctrl's `q`) so it filters across all pages, not just the loaded one.
+const PAGE_SIZE = 50
+const page = ref(1)
+const totalItems = ref(0)
+const totalPages = ref(1)
 
 // ---- node-detail drawer ----
 const selected = ref<OsctrlNode | null>(null)
 const detail = ref<OsctrlNodeDetail | null>(null)
 const detailLoading = ref(false)
+const detailError = ref('')
 
-const filtered = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  if (!q) return nodes.value
-  return nodes.value.filter((n) =>
-    [n.hostname, n.uuid, n.ip_address, n.platform, n.localname]
-      .some((f) => (f ?? '').toLowerCase().includes(q)),
-  )
-})
-
-const onlineCount = computed(() => nodes.value.filter((n) => isOnline(n.last_seen)).length)
+// 1-indexed row range shown for the current page ("1–50 of 128").
+const rangeStart = computed(() => (totalItems.value === 0 ? 0 : (page.value - 1) * PAGE_SIZE + 1))
+const rangeEnd = computed(() => Math.min(page.value * PAGE_SIZE, totalItems.value))
 
 // Ordered field list for the specification grid in the drawer.
 const spec = computed<Array<{ label: string; value: string }>>(() => {
@@ -68,12 +68,12 @@ const spec = computed<Array<{ label: string; value: string }>>(() => {
 async function openNode(n: OsctrlNode) {
   selected.value = n
   detail.value = null
+  detailError.value = ''
   detailLoading.value = true
   try {
     detail.value = await conn.client.osctrlNode(env.value, n.uuid)
-  } catch {
-    // Backend not wired yet — synthesise a rich record from the row.
-    detail.value = sampleNodeDetail(n)
+  } catch (e) {
+    detailError.value = apiErr(e)
   } finally {
     detailLoading.value = false
   }
@@ -82,15 +82,15 @@ async function openNode(n: OsctrlNode) {
 function closeDrawer() {
   selected.value = null
   detail.value = null
+  detailError.value = ''
 }
 
 async function loadEnvironments() {
   try {
     environments.value = await conn.client.osctrlEnvironments()
-    sample.value = false
-  } catch {
-    environments.value = sampleEnvironments
-    sample.value = true
+  } catch (e) {
+    environments.value = []
+    error.value = apiErr(e)
   }
   if (!env.value) {
     env.value = osctrl.environment || environments.value[0]?.name || ''
@@ -100,25 +100,58 @@ async function loadEnvironments() {
 async function loadNodes() {
   if (!env.value) {
     nodes.value = []
+    totalItems.value = 0
+    totalPages.value = 1
+    loading.value = false
     return
   }
   closeDrawer()
   loading.value = true
   error.value = ''
   try {
-    nodes.value = await conn.client.osctrlNodes(env.value)
-    sample.value = false
-  } catch {
-    // Backend not wired yet — show sample rows for the chosen environment.
-    nodes.value = sampleNodes.filter((n) => n.environment === env.value)
-    if (nodes.value.length === 0) nodes.value = sampleNodes
-    sample.value = true
+    const res = await conn.client.osctrlNodes(env.value, {
+      page: page.value,
+      pageSize: PAGE_SIZE,
+      search: search.value.trim(),
+    })
+    nodes.value = res.items ?? []
+    totalItems.value = res.total_items ?? nodes.value.length
+    totalPages.value = res.total_pages ?? 1
+    // Clamp to what the server actually served (e.g. after a search shrinks the set).
+    page.value = res.page ?? page.value
+  } catch (e) {
+    // No live data — surface the error rather than fabricating rows.
+    nodes.value = []
+    totalItems.value = 0
+    totalPages.value = 1
+    error.value = apiErr(e)
   } finally {
     loading.value = false
   }
 }
 
-watch(env, loadNodes)
+function goToPage(p: number) {
+  const next = Math.min(Math.max(1, p), totalPages.value)
+  if (next === page.value) return
+  page.value = next
+  void loadNodes()
+}
+
+// Changing environment resets to the first page.
+watch(env, () => {
+  page.value = 1
+  void loadNodes()
+})
+
+// Debounce search input, then re-query from the first page (server-side match).
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch(search, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    page.value = 1
+    void loadNodes()
+  }, 300)
+})
 
 onMounted(async () => {
   if (!osctrl.loaded) await osctrl.loadSettings()
@@ -131,7 +164,7 @@ onMounted(async () => {
   <div class="p-6">
     <div class="mb-1 flex items-center gap-3">
       <h1 class="text-lg font-semibold text-fg">Nodes</h1>
-      <span class="chip">{{ onlineCount }} online / {{ nodes.length }}</span>
+      <span class="chip">{{ totalItems }} enrolled</span>
       <div class="ml-auto flex items-center gap-2">
         <select v-model="env" class="field max-w-[12rem]">
           <option v-for="e in environments" :key="e.uuid" :value="e.name">{{ e.name }}</option>
@@ -147,16 +180,18 @@ onMounted(async () => {
     </div>
     <p class="mb-4 text-sm text-fg-muted">Enrolled systems reporting to osctrl. Select a row for full details.</p>
 
-    <div v-if="sample" class="mb-4 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning">
-      Showing sample data — connect osctrl in
-      <RouterLink :to="{ name: 'settings' }" class="underline">Settings</RouterLink>
-      (and the backend osctrl proxy) to see live nodes.
-    </div>
-    <p v-if="error" class="mb-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ error }}</p>
+    <p v-if="error" class="mb-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
+      Cannot reach osctrl — {{ error }}. Check the connection in
+      <RouterLink :to="{ name: 'settings' }" class="underline">Settings</RouterLink>.
+    </p>
     <p v-if="loading" class="text-sm text-fg-subtle">Loading…</p>
 
-    <div v-else-if="filtered.length === 0" class="card p-10 text-center text-sm text-fg-subtle">
-      No nodes in this environment yet.
+    <div v-else-if="error" class="card p-10 text-center text-sm text-fg-subtle">
+      No live nodes to show.
+    </div>
+
+    <div v-else-if="nodes.length === 0" class="card p-10 text-center text-sm text-fg-subtle">
+      {{ search.trim() ? 'No nodes match your search.' : 'No nodes in this environment yet.' }}
     </div>
 
     <div v-else class="card overflow-x-auto">
@@ -174,7 +209,7 @@ onMounted(async () => {
         </thead>
         <tbody>
           <tr
-            v-for="n in filtered"
+            v-for="n in nodes"
             :key="n.uuid"
             class="cursor-pointer border-t border-line hover:bg-bg"
             :class="selected?.uuid === n.uuid ? 'bg-accent-soft' : ''"
@@ -208,6 +243,19 @@ onMounted(async () => {
       </table>
     </div>
 
+    <!-- Pagination -->
+    <div
+      v-if="!loading && !error && nodes.length > 0"
+      class="mt-3 flex items-center gap-3 text-sm text-fg-muted"
+    >
+      <span>{{ rangeStart }}–{{ rangeEnd }} of {{ totalItems }}</span>
+      <div class="ml-auto flex items-center gap-2">
+        <button class="btn-outline" :disabled="page <= 1" @click="goToPage(page - 1)">← Prev</button>
+        <span class="tabular-nums">Page {{ page }} of {{ totalPages }}</span>
+        <button class="btn-outline" :disabled="page >= totalPages" @click="goToPage(page + 1)">Next →</button>
+      </div>
+    </div>
+
     <!-- Node-detail drawer -->
     <Transition name="drawer">
       <div v-if="selected" class="fixed inset-0 z-40 flex justify-end" @keydown.esc="closeDrawer">
@@ -230,6 +278,13 @@ onMounted(async () => {
 
           <div class="flex-1 overflow-y-auto px-5 py-4">
             <p v-if="detailLoading" class="text-sm text-fg-subtle">Loading details…</p>
+
+            <p
+              v-else-if="detailError"
+              class="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger"
+            >
+              Could not load node details — {{ detailError }}
+            </p>
 
             <template v-else-if="detail">
               <div v-if="detail.tags?.length" class="mb-4 flex flex-wrap gap-1.5">
