@@ -6,6 +6,7 @@ import { useOsctrlStore } from '@/stores/osctrl'
 import { useFlomorphicStore } from '@/stores/flomorphic'
 import { useIssueViewsStore } from '@/stores/issueViews'
 import ThemeToggle from '@/components/ThemeToggle.vue'
+import VersionBadge from '@/components/VersionBadge.vue'
 import Icon from '@/components/Icon.vue'
 import IssueViewDialog from '@/components/IssueViewDialog.vue'
 import type { IssueView } from '@/api/types'
@@ -102,7 +103,7 @@ onMounted(() => {
 
 <template>
   <div class="flex h-full flex-col bg-bg">
-    <!-- Global top bar — brand left, theme selector top-right -->
+    <!-- Global top bar — brand left, version + theme selector top-right -->
     <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-4">
       <RouterLink :to="{ name: 'dashboards' }" class="flex items-center gap-2.5">
         <span class="grid h-8 w-8 place-items-center rounded-md bg-accent font-bold text-accent-fg">V</span>
@@ -112,6 +113,7 @@ onMounted(() => {
       </RouterLink>
 
       <div class="flex items-center gap-2">
+        <VersionBadge />
         <ThemeToggle />
       </div>
     </header>

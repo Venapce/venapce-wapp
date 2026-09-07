@@ -65,6 +65,12 @@ export class VenapceClient {
     this.http = axios.create({ baseURL: this.base })
   }
 
+  /** The backend's build identity (its stamped release version). */
+  async apiVersion(): Promise<string> {
+    const { data } = await this.http.get('/api/version')
+    return data?.version ?? ''
+  }
+
   // ---- settings ----
   async supersetSettings(): Promise<SupersetSettingsView> {
     const { data } = await this.http.get('/api/settings/superset')

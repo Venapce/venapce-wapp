@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_SUPERSET_URL?: string
   readonly VITE_VENAPCE_API_URL?: string
+  readonly VITE_VENAPCE_VERSION?: string
 }
 interface ImportMeta {
   readonly env: ImportMetaEnv
