@@ -247,12 +247,32 @@ export interface FlomorphicSettingsView {
   osctrlManaged?: boolean
   /** Live status of the in-process plugin (present once registered). */
   plugin?: PluginStatus
-  /** FloMorphic API access, from the backend env (FLOMORPHIC_URL + FLOMORPHIC_JWT_SECRET). */
+  /** FloMorphic API access: env defaults (FLOMORPHIC_URL + FLOMORPHIC_JWT_SECRET +
+   *  INFRA_HOST), overridden by whatever was saved in Settings. */
   apiConfigured?: boolean
   /** The configured FloMorphic API base URL (value is safe to show). */
   apiUrl?: string
   /** Whether the HS256 signing secret is set (the value is never returned). */
   jwtSecretSet?: boolean
+  /** Host infra answers on — NATS :4222 for the plugin, osspace :8022 for osctrl. */
+  infraHost?: string
+  /** True while these come straight from the backend environment (nothing saved
+   *  here yet), so the card can label them and offer "reset to environment". */
+  apiFromEnv?: boolean
+}
+
+/** Outcome of saving/testing/resetting the FloMorphic access (the .../api routes).
+ *  Carries the same public-safe view plus whether FloMorphic actually answered. */
+export interface FlomorphicAccessResult {
+  apiConfigured?: boolean
+  apiUrl?: string
+  jwtSecretSet?: boolean
+  infraHost?: string
+  apiFromEnv?: boolean
+  /** Whether a live probe reached FloMorphic and it accepted the signed token. */
+  reachable?: boolean
+  /** Why the probe failed (absent when reachable). */
+  reachError?: string
 }
 
 /** Outcome of registering/refreshing venapce in FloMorphic (PUT settings, or the

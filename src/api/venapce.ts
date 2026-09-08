@@ -10,6 +10,7 @@ import type {
   DatasetDetail,
   DatasetSummary,
   ExamplesStatus,
+  FlomorphicAccessResult,
   FlomorphicCheckResult,
   FlomorphicConnectResult,
   FlomorphicSettingsView,
@@ -207,6 +208,33 @@ export class VenapceClient {
   // ---- FloMorphic plugin registration + the osctrl-space broker ----
   async flomorphicSettings(): Promise<FlomorphicSettingsView> {
     const { data } = await this.http.get('/api/settings/flomorphic')
+    return data
+  }
+  /**
+   * Save where FloMorphic is — API base, shared JWT secret, infra host — overriding
+   * the backend environment's values. Takes effect immediately (the live client is
+   * rebuilt) and survives a container recreate. A blank `jwtSecret` keeps the one
+   * already stored.
+   */
+  async saveFlomorphicAccess(body: {
+    url: string
+    jwtSecret?: string
+    infraHost?: string
+  }): Promise<FlomorphicAccessResult> {
+    const { data } = await this.http.put('/api/settings/flomorphic/api', body)
+    return data
+  }
+  /** Probe FloMorphic without saving — pass values to try, or {} for the live ones. */
+  async testFlomorphicAccess(body: {
+    url?: string
+    jwtSecret?: string
+  } = {}): Promise<FlomorphicAccessResult> {
+    const { data } = await this.http.post('/api/settings/flomorphic/api/test', body)
+    return data
+  }
+  /** Drop the saved override and go back to the backend environment's values. */
+  async resetFlomorphicAccess(): Promise<FlomorphicAccessResult> {
+    const { data } = await this.http.post('/api/settings/flomorphic/api/reset', {})
     return data
   }
   /**

@@ -3,6 +3,7 @@ import { useConnectionStore } from '@/stores/connection'
 import { useOsctrlStore } from '@/stores/osctrl'
 import { apiErr } from '@/api/venapce'
 import type {
+  FlomorphicAccessResult,
   FlomorphicConnectResult,
   FlomorphicSettingsView,
   OsspaceResult,
@@ -22,10 +23,18 @@ interface State {
   pluginId: string
   infraBase: string
   osctrlManaged: boolean
-  /** FloMorphic API access from the backend env. */
+  /** FloMorphic API access: the backend env's values, overridden by anything saved
+   *  from this card. */
   apiConfigured: boolean
   apiUrl: string
   jwtSecretSet: boolean
+  /** Host infra answers on (NATS :4222 / osspace :8022). */
+  infraHost: string
+  /** True while the access is the backend environment's (nothing saved here). */
+  apiFromEnv: boolean
+  /** Last reachability probe of the FloMorphic API (null until one ran). */
+  reachable: boolean | null
+  reachError: string
   /** Local status of the in-process plugin (null until known). */
   plugin: PluginStatus | null
   /** Plugin connectivity as FloMorphic sees it (null until checked). */
@@ -46,6 +55,10 @@ export const useFlomorphicStore = defineStore('flomorphic', {
     apiConfigured: false,
     apiUrl: '',
     jwtSecretSet: false,
+    infraHost: '',
+    apiFromEnv: true,
+    reachable: null,
+    reachError: '',
     plugin: null,
     probe: null,
     nodes: null,
@@ -67,6 +80,32 @@ export const useFlomorphicStore = defineStore('flomorphic', {
       } finally {
         this.loaded = true
       }
+    },
+
+    /**
+     * Save where FloMorphic is (API base + shared secret + infra host), overriding
+     * the backend environment. Applies immediately — no container restart — and the
+     * response says whether FloMorphic actually answered.
+     */
+    async saveAccess(body: { url: string; jwtSecret?: string; infraHost?: string }) {
+      const res = await this.client().saveFlomorphicAccess(body)
+      this.applyAccess(res)
+      return res
+    },
+
+    /** Probe an address without saving it, so a wrong URL never gets committed. */
+    async testAccess(body: { url?: string; jwtSecret?: string } = {}) {
+      const res = await this.client().testFlomorphicAccess(body)
+      this.reachable = res.reachable ?? null
+      this.reachError = res.reachError ?? ''
+      return res
+    },
+
+    /** Drop the saved override; the backend environment's values apply again. */
+    async resetAccess() {
+      const res = await this.client().resetFlomorphicAccess()
+      this.applyAccess(res)
+      return res
     },
 
     /**
@@ -118,6 +157,16 @@ export const useFlomorphicStore = defineStore('flomorphic', {
       this.nodes = res.nodes ?? this.nodes
     },
 
+    applyAccess(res: FlomorphicAccessResult) {
+      this.apiConfigured = !!res.apiConfigured
+      this.apiUrl = res.apiUrl ?? ''
+      this.jwtSecretSet = !!res.jwtSecretSet
+      this.infraHost = res.infraHost ?? ''
+      this.apiFromEnv = !!res.apiFromEnv
+      this.reachable = res.reachable ?? null
+      this.reachError = res.reachError ?? ''
+    },
+
     applyView(view: FlomorphicSettingsView) {
       this.configured = !!view.configured
       this.extensionId = view.extensionId ?? ''
@@ -127,6 +176,8 @@ export const useFlomorphicStore = defineStore('flomorphic', {
       this.apiConfigured = !!view.apiConfigured
       this.apiUrl = view.apiUrl ?? ''
       this.jwtSecretSet = !!view.jwtSecretSet
+      this.infraHost = view.infraHost ?? ''
+      this.apiFromEnv = !!view.apiFromEnv
       this.plugin = view.plugin ?? null
     },
   },
