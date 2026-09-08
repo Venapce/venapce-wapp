@@ -4,7 +4,6 @@ import { useRoute } from 'vue-router'
 import { useConnectionStore } from '@/stores/connection'
 import { useOsctrlStore } from '@/stores/osctrl'
 import { useFlomorphicStore } from '@/stores/flomorphic'
-import { useVersionStore } from '@/stores/version'
 import SupersetSettingsCard from '@/components/settings/SupersetSettingsCard.vue'
 import DemoDataCard from '@/components/settings/DemoDataCard.vue'
 import FlomorphicSettingsCard from '@/components/settings/FlomorphicSettingsCard.vue'
@@ -13,14 +12,12 @@ import OsctrlSettingsCard from '@/components/settings/OsctrlSettingsCard.vue'
 const conn = useConnectionStore()
 const osctrl = useOsctrlStore()
 const flo = useFlomorphicStore()
-const version = useVersionStore()
 const route = useRoute()
 const isSetup = route.query.setup === '1'
 
 onMounted(() => {
   if (!osctrl.loaded) osctrl.loadSettings()
   if (!flo.loaded) flo.loadSettings()
-  version.load()
 })
 </script>
 
@@ -68,28 +65,6 @@ onMounted(() => {
           Manage database connections in Superset ↗
         </a>
         <p v-else class="text-sm text-fg-subtle">Configure the Superset connection above first.</p>
-      </section>
-
-      <!-- About: the build this appliance is running (panel + API, same release tag). -->
-      <section class="rounded-lg border border-line bg-surface p-5">
-        <h2 class="mb-1 text-sm font-semibold text-fg">About</h2>
-        <p class="mb-4 text-sm text-fg-muted">
-          The Venapce build this instance is running. Panel and API are released together, so the
-          two versions normally match.
-        </p>
-        <dl class="space-y-2 text-sm">
-          <div class="flex items-center justify-between">
-            <dt class="text-fg-muted">Panel</dt>
-            <dd class="font-mono text-fg">{{ version.panel }}</dd>
-          </div>
-          <div class="flex items-center justify-between">
-            <dt class="text-fg-muted">API</dt>
-            <dd class="font-mono text-fg">{{ version.api || (version.loaded ? 'unreachable' : '…') }}</dd>
-          </div>
-        </dl>
-        <p v-if="version.mismatch" class="mt-3 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
-          Panel and API versions differ — reload the page to pick up the current build.
-        </p>
       </section>
 
       <!-- Placeholder for future configuration cards (users, spaces, theme, …). -->

@@ -2,20 +2,22 @@
 import { onMounted } from 'vue'
 import { useVersionStore } from '@/stores/version'
 
-// The running appliance version, pinned in the top bar next to the theme
-// selector. Shows the panel's own build; the tooltip adds the backend's, and a
-// mismatch between the two is called out (usually a stale cached bundle).
+// The running appliance version, sitting at the foot of the sidebar under the
+// connection rows. Panel and API ship as one release, so a single line is
+// enough; the tooltip carries both sides and a mismatch (usually a stale
+// cached bundle) is called out in colour.
 const version = useVersionStore()
 
 onMounted(() => version.load())
 </script>
 
 <template>
-  <span
-    class="rounded-md px-1.5 py-0.5 font-mono text-[11px] leading-none"
-    :class="version.mismatch ? 'bg-warning-soft text-warning' : 'text-fg-subtle'"
+  <div
+    class="mt-2 border-t border-line px-2.5 pb-1 pt-2 text-center text-[11px] leading-4"
+    :class="version.mismatch ? 'text-warning' : 'text-fg-subtle'"
     :title="version.mismatch ? `${version.detail}\n\nPanel and API versions differ — reload to pick up the current build.` : version.detail"
   >
-    {{ version.panel }}
-  </span>
+    <div class="font-mono">Venapce - {{ version.panel }}</div>
+    <div>by Inflowenger Dev. Team</div>
+  </div>
 </template>

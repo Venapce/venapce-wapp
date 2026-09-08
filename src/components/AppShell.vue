@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
-import { useConnectionStore } from '@/stores/connection'
 import { useOsctrlStore } from '@/stores/osctrl'
 import { useFlomorphicStore } from '@/stores/flomorphic'
 import { useIssueViewsStore } from '@/stores/issueViews'
@@ -11,7 +10,6 @@ import Icon from '@/components/Icon.vue'
 import IssueViewDialog from '@/components/IssueViewDialog.vue'
 import type { IssueView } from '@/api/types'
 
-const conn = useConnectionStore()
 const osctrl = useOsctrlStore()
 const flo = useFlomorphicStore()
 const views = useIssueViewsStore()
@@ -70,13 +68,6 @@ function hostOf(u: string) {
 // = live. FloMorphic has no login probe, so "registered" reads as live.
 const statuses = computed(() => [
   {
-    key: 'superset',
-    label: `Superset · ${hostOf(conn.supersetUrl) || 'not configured'}`,
-    title: conn.supersetUrl,
-    sub: conn.configured ? conn.username : 'not configured',
-    color: !conn.configured ? 'bg-fg-subtle' : conn.connected === false ? 'bg-danger' : 'bg-success',
-  },
-  {
     key: 'osctrl',
     label: `osctrl · ${hostOf(osctrl.url) || 'not configured'}`,
     title: osctrl.url,
@@ -103,7 +94,7 @@ onMounted(() => {
 
 <template>
   <div class="flex h-full flex-col bg-bg">
-    <!-- Global top bar — brand left, version + theme selector top-right -->
+    <!-- Global top bar — brand left, theme selector top-right -->
     <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-4">
       <RouterLink :to="{ name: 'dashboards' }" class="flex items-center gap-2.5">
         <span class="grid h-8 w-8 place-items-center rounded-md bg-accent font-bold text-accent-fg">V</span>
@@ -113,7 +104,6 @@ onMounted(() => {
       </RouterLink>
 
       <div class="flex items-center gap-2">
-        <VersionBadge />
         <ThemeToggle />
       </div>
     </header>
@@ -223,6 +213,7 @@ onMounted(() => {
               <span class="truncate text-fg-muted">{{ s.label }}</span>
             </div>
           </RouterLink>
+          <VersionBadge />
         </div>
       </aside>
 
