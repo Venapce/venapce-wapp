@@ -3,9 +3,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useConnectionStore } from '@/stores/connection'
 import { useOsctrlStore } from '@/stores/osctrl'
 import { apiErr } from '@/api/venapce'
-import { isOnline, relativeTime } from '@/lib/format'
+import { formatBytes, isOnline, relativeTime } from '@/lib/format'
 import OsIcon from '@/components/OsIcon.vue'
-import type { OsctrlEnvironment, OsctrlNode, OsctrlNodeDetail } from '@/api/types'
+import type { OsctrlEnvironment, OsctrlNode, OsctrlNodeDetail, OsctrlNodeUptime } from '@/api/types'
 
 // Enrolled systems (osquery nodes) for the selected osctrl environment.
 const conn = useConnectionStore()
@@ -37,32 +37,143 @@ const detailError = ref('')
 const rangeStart = computed(() => (totalItems.value === 0 ? 0 : (page.value - 1) * PAGE_SIZE + 1))
 const rangeEnd = computed(() => Math.min(page.value * PAGE_SIZE, totalItems.value))
 
+// osctrl computes each node's triage state server-side (its own inactive
+// threshold, plus posture where that is enabled), so we show what osctrl says
+// rather than a second opinion. Older builds omit `health` — fall back to the
+// last-seen heuristic there.
+type Tone = 'success' | 'warning' | 'danger' | 'muted'
+const toneText: Record<Tone, string> = {
+  success: 'text-success',
+  warning: 'text-warning',
+  danger: 'text-danger',
+  muted: 'text-fg-subtle',
+}
+const toneDot: Record<Tone, string> = {
+  success: 'bg-success',
+  warning: 'bg-warning',
+  danger: 'bg-danger',
+  muted: 'bg-fg-subtle',
+}
+
+function health(n: OsctrlNode): { label: string; tone: Tone } {
+  switch (n.health?.status) {
+    case 'healthy':
+      return { label: 'healthy', tone: 'success' }
+    case 'attention':
+      return { label: 'attention', tone: 'warning' }
+    case 'at_risk':
+      return { label: 'at risk', tone: 'danger' }
+    case 'offline':
+      return { label: 'offline', tone: 'muted' }
+  }
+  return isOnline(n.last_seen) ? { label: 'online', tone: 'success' } : { label: 'offline', tone: 'muted' }
+}
+
+/** Drop the fields osctrl left empty so the grid shows only real values. */
+function rows(list: Array<[string, unknown]>): Array<{ label: string; value: string }> {
+  return list
+    .filter(([, v]) => v != null && v !== '')
+    .map(([label, v]) => ({ label, value: String(v) }))
+}
+
+/** "Linux Mint 22.3 (Zena)". The node row only carries osquery's platform key
+ *  and version; the enrollment payload is what names the OS. */
+function platformLabel(d: OsctrlNodeDetail): string {
+  const os = d.system_info?.os
+  const name = os?.name || d.platform || ''
+  const version = os?.version || d.platform_version || ''
+  const label = [name, version].filter(Boolean).join(' ')
+  const codename = os?.codename
+  return codename && !label.includes(codename) ? `${label} (${codename})` : label
+}
+
+/** osctrl only fills uptime when posture collection is on. */
+function uptimeLabel(u?: OsctrlNodeUptime): string {
+  if (!u) return ''
+  const parts = [
+    u.days ? `${u.days}d` : '',
+    u.hours ? `${u.hours}h` : '',
+    u.minutes ? `${u.minutes}m` : '',
+  ].filter(Boolean)
+  return parts.length ? parts.join(' ') : 'just booted'
+}
+
 // Ordered field list for the specification grid in the drawer.
 const spec = computed<Array<{ label: string; value: string }>>(() => {
   const d = detail.value
   if (!d) return []
-  const rows: Array<[string, unknown]> = [
+  const sys = d.system_info?.system
+  const cores = sys?.cpu_physical_cores
+    ? `${sys.cpu_physical_cores} physical / ${sys.cpu_logical_cores || '?'} logical`
+    : ''
+  const hardware = [sys?.hardware_vendor, sys?.hardware_model].filter(Boolean).join(' ')
+  return rows([
     ['UUID', d.uuid],
     ['Hostname', d.hostname],
     ['Local name', d.localname],
     ['Username', d.username],
-    ['IP address', d.ip_address],
-    ['Platform', d.platform_version || d.platform],
+    ['osquery user', d.osquery_user],
+    ['IP address', d.country_code ? `${d.ip_address} (${d.country_code})` : d.ip_address],
+    ['Platform', platformLabel(d)],
     ['osquery', d.osquery_version],
-    ['CPU', d.cpu],
-    ['Memory', d.memory],
-    ['Hardware serial', d.hardware_serial],
+    ['CPU', sys?.cpu_brand || d.cpu],
+    ['Cores', cores],
+    ['Memory', d.memory ? formatBytes(d.memory) : ''],
+    ['Hardware', hardware],
+    ['Hardware serial', d.hardware_serial || sys?.hardware_serial],
     ['Environment', d.environment],
     ['Enrolled', d.created_at ? new Date(d.created_at).toLocaleString() : ''],
     ['Last seen', d.last_seen ? relativeTime(d.last_seen) : ''],
-    ['Last config', d.last_config ? relativeTime(d.last_config) : ''],
-    ['Last status', d.last_status ? relativeTime(d.last_status) : ''],
-    ['Last result', d.last_result ? relativeTime(d.last_result) : ''],
+    ['Uptime', uptimeLabel(d.uptime)],
+    ['Posture risk', d.posture?.risk_level],
     ['Config hash', d.config_hash],
-    ['Data received', d.bytes_received != null ? `${(d.bytes_received / 1_048_576).toFixed(1)} MB` : ''],
+    ['Daemon hash', d.daemon_hash],
+    ['Data received', formatBytes(d.bytes_received)],
     ['Node key', d.node_key],
-  ]
-  return rows.filter(([, v]) => v != null && v !== '').map(([label, v]) => ({ label, value: String(v) }))
+  ])
+})
+
+// The rest of what osctrl parsed out of the enrollment payload (`system_info`).
+// Absent for nodes enrolled before osctrl stored it, so every group is dropped
+// when it has nothing to show.
+const enrichment = computed<Array<{ title: string; rows: Array<{ label: string; value: string }> }>>(() => {
+  const e = detail.value?.system_info
+  if (!e) return []
+  const os = e.os
+  const bios = e.bios
+  const osq = e.osquery
+  return [
+    {
+      title: 'Operating system',
+      rows: rows([
+        ['Name', os?.name],
+        ['Version', os?.version],
+        ['Codename', os?.codename],
+        ['Platform', os?.platform],
+        ['Family', os?.platform_like],
+      ]),
+    },
+    {
+      title: 'BIOS',
+      rows: rows([
+        ['Vendor', bios?.vendor],
+        ['Version', bios?.version],
+        ['Date', bios?.date],
+        ['Revision', bios?.revision],
+      ]),
+    },
+    {
+      title: 'osquery daemon',
+      rows: rows([
+        ['Version', osq?.version],
+        ['Build platform', osq?.build_platform],
+        ['Build distro', osq?.build_distro],
+        ['Extensions', osq?.extensions],
+        ['Started', osq?.start_time],
+        ['Config valid', osq?.config_valid],
+      ]),
+    },
+  ].filter((g) => g.rows.length > 0)
 })
 
 async function openNode(n: OsctrlNode) {
@@ -218,10 +329,11 @@ onMounted(async () => {
             <td class="px-4 py-2">
               <span
                 class="inline-flex items-center gap-1.5 text-xs font-medium"
-                :class="isOnline(n.last_seen) ? 'text-success' : 'text-fg-subtle'"
+                :class="toneText[health(n).tone]"
+                :title="n.health?.reason"
               >
-                <span class="h-2 w-2 rounded-full" :class="isOnline(n.last_seen) ? 'bg-success' : 'bg-fg-subtle'" />
-                {{ isOnline(n.last_seen) ? 'online' : 'offline' }}
+                <span class="h-2 w-2 rounded-full" :class="toneDot[health(n).tone]" />
+                {{ health(n).label }}
               </span>
             </td>
             <td class="px-4 py-2">
@@ -264,10 +376,7 @@ onMounted(async () => {
           <header class="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
             <div class="min-w-0">
               <div class="flex items-center gap-2">
-                <span
-                  class="h-2 w-2 shrink-0 rounded-full"
-                  :class="isOnline(selected.last_seen) ? 'bg-success' : 'bg-fg-subtle'"
-                />
+                <span class="h-2 w-2 shrink-0 rounded-full" :class="toneDot[health(selected).tone]" />
                 <OsIcon :platform="selected.platform" :size="18" class="text-fg-muted" />
                 <h2 class="truncate text-base font-semibold text-fg">{{ selected.hostname }}</h2>
               </div>
@@ -287,9 +396,29 @@ onMounted(async () => {
             </p>
 
             <template v-else-if="detail">
+              <!-- osctrl tags are records, not strings: each carries its own colour. -->
               <div v-if="detail.tags?.length" class="mb-4 flex flex-wrap gap-1.5">
-                <span v-for="t in detail.tags" :key="t" class="chip">{{ t }}</span>
+                <span
+                  v-for="t in detail.tags"
+                  :key="t.id"
+                  class="chip-muted"
+                  :title="t.description || t.name"
+                >
+                  <span
+                    class="h-2 w-2 rounded-full"
+                    :style="{ backgroundColor: t.color || 'currentColor' }"
+                  />
+                  {{ t.name }}
+                </span>
               </div>
+
+              <p
+                v-if="detail.health?.reason"
+                class="mb-4 text-xs"
+                :class="toneText[health(detail).tone]"
+              >
+                {{ detail.health.reason }}
+              </p>
 
               <!-- Specification -->
               <h3 class="label">Specification</h3>
@@ -299,6 +428,17 @@ onMounted(async () => {
                   <dd class="min-w-0 flex-1 break-words font-mono text-fg">{{ row.value }}</dd>
                 </div>
               </dl>
+
+              <!-- What osctrl parsed out of the osquery enrollment payload -->
+              <template v-for="group in enrichment" :key="group.title">
+                <h3 class="label">{{ group.title }}</h3>
+                <dl class="mb-5 divide-y divide-line rounded-md border border-line">
+                  <div v-for="row in group.rows" :key="row.label" class="flex gap-3 px-3 py-1.5 text-xs">
+                    <dt class="w-28 shrink-0 text-fg-muted">{{ row.label }}</dt>
+                    <dd class="min-w-0 flex-1 break-words font-mono text-fg">{{ row.value }}</dd>
+                  </div>
+                </dl>
+              </template>
             </template>
           </div>
         </aside>

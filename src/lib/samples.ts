@@ -9,42 +9,12 @@
 import type {
   Issue,
   OsctrlEnvironment,
-  OsctrlNode,
-  OsctrlNodeDetail,
   StageItem,
 } from '@/api/types'
 
 export const sampleEnvironments: OsctrlEnvironment[] = [
   { uuid: '0007038e-e791-4ae3-afd4-2e047d6639ed', name: 'saga-dev', hostname: 'localhost', type: 'osquery', icon: 'server' },
   { uuid: 'a19c2f40-1b2c-4c8e-9f2a-77c1d0f4b210', name: 'prod-edge', hostname: 'osctrl.venapce.io', type: 'osquery', icon: 'cloud' },
-]
-
-export const sampleNodes: OsctrlNode[] = [
-  {
-    id: 1, uuid: 'e2b1c9a4-01', hostname: 'web-01.prod', localname: 'web-01', ip_address: '10.0.4.21',
-    platform: 'linux', platform_version: 'Ubuntu 22.04', osquery_version: '5.12.1',
-    environment: 'prod-edge', last_seen: new Date(Date.now() - 42_000).toISOString(), cpu: '4 vCPU', memory: '8 GB',
-  },
-  {
-    id: 2, uuid: 'e2b1c9a4-02', hostname: 'web-02.prod', localname: 'web-02', ip_address: '10.0.4.22',
-    platform: 'linux', platform_version: 'Ubuntu 22.04', osquery_version: '5.12.1',
-    environment: 'prod-edge', last_seen: new Date(Date.now() - 6 * 60_000).toISOString(), cpu: '4 vCPU', memory: '8 GB',
-  },
-  {
-    id: 3, uuid: 'e2b1c9a4-03', hostname: 'db-01.prod', localname: 'db-01', ip_address: '10.0.5.10',
-    platform: 'linux', platform_version: 'Debian 12', osquery_version: '5.11.0',
-    environment: 'prod-edge', last_seen: new Date(Date.now() - 3 * 3600_000).toISOString(), cpu: '8 vCPU', memory: '32 GB',
-  },
-  {
-    id: 4, uuid: 'e2b1c9a4-04', hostname: 'ANALYST-WIN', localname: 'analyst', ip_address: '192.168.1.44',
-    platform: 'windows', platform_version: 'Windows 11 Pro', osquery_version: '5.12.1',
-    environment: 'saga-dev', last_seen: new Date(Date.now() - 20 * 3600_000).toISOString(), cpu: '8 vCPU', memory: '16 GB',
-  },
-  {
-    id: 5, uuid: 'e2b1c9a4-05', hostname: 'macbook-sec', localname: 'sec-laptop', ip_address: '192.168.1.51',
-    platform: 'darwin', platform_version: 'macOS 14.5', osquery_version: '5.12.1',
-    environment: 'saga-dev', last_seen: new Date(Date.now() - 55_000).toISOString(), cpu: 'M3 Pro', memory: '18 GB',
-  },
 ]
 
 export const sampleIssues: Issue[] = [
@@ -155,21 +125,3 @@ export const sampleEnroll = {
   ],
 }
 
-/** Build a rich detail record for a node from its table row (sample fallback). */
-export function sampleNodeDetail(n: OsctrlNode): OsctrlNodeDetail {
-  const enrolled = new Date(Date.now() - 14 * 24 * 3600_000).toISOString()
-  return {
-    ...n,
-    node_key: `nk_${n.uuid.replace(/-/g, '')}9f2a`,
-    username: n.platform === 'windows' ? 'Administrator' : 'root',
-    hardware_serial: `SN-${n.uuid.slice(-4).toUpperCase()}-00${n.id ?? 0}`,
-    config_hash: 'a1b2c3d4e5f6',
-    daemon_hash: 'f6e5d4c3b2a1',
-    bytes_received: 1_048_576 * ((n.id ?? 1) * 7),
-    created_at: n.created_at ?? enrolled,
-    last_config: n.last_seen,
-    last_status: n.last_seen,
-    last_result: n.last_seen,
-    tags: [n.environment ?? 'default', n.platform ?? 'unknown'].filter(Boolean) as string[],
-  }
-}

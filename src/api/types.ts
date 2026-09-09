@@ -326,39 +326,141 @@ export interface OsctrlEnvironment {
   icon?: string
 }
 
-/** An enrolled system reported by osctrl (nodes.OsqueryNode, trimmed). */
+/** A tag osctrl carries on a node (tags.AdminTag). Tags are records, not bare
+ *  strings: each one brings its own colour and icon, and `custom_tag` says what
+ *  kind it is — "env" for the environment's own tag, "tag" for the rest. */
+export interface OsctrlTag {
+  id: number
+  name: string
+  description?: string
+  color?: string
+  icon?: string
+  created_by?: string
+  custom_tag?: string
+  /** True when osctrl attached it itself (e.g. the detected platform). */
+  auto_tag?: boolean
+  environment_id?: number
+  tag_type?: number
+  cohort?: boolean
+  created_at?: string
+  updated_at?: string
+}
+
+/** osctrl's own triage state for a node (types.NodeHealth). Computed server-side
+ *  from the environment's inactive threshold (plus posture, where enabled), so
+ *  the front reports what osctrl reports instead of guessing from last_seen. */
+export interface OsctrlNodeHealth {
+  /** healthy | attention | at_risk | offline */
+  status?: string
+  reason?: string
+  signals?: string[]
+}
+
+/** Node uptime, present only when osctrl's posture collection is enabled. */
+export interface OsctrlNodeUptime {
+  days: number
+  hours: number
+  minutes: number
+  seconds: number
+  total_seconds?: number
+  last_seen?: string
+}
+
+/** Compact posture summary; detailed controls live on osctrl's posture tab. */
+export interface OsctrlNodePosture {
+  risk_level?: string
+}
+
+/** The parsed, sanitized subset of the osquery enrollment payload that osctrl
+ *  serves under `system_info` (types.NodeEnrichment). Absent when the node has
+ *  no stored enrollment or it could not be parsed — every part is optional. */
+export interface OsctrlNodeEnrichment {
+  system?: {
+    hardware_vendor?: string
+    hardware_model?: string
+    hardware_version?: string
+    hardware_serial?: string
+    cpu_brand?: string
+    cpu_type?: string
+    cpu_subtype?: string
+    cpu_physical_cores?: string
+    cpu_logical_cores?: string
+    physical_memory?: string
+    computer_name?: string
+    local_hostname?: string
+  }
+  /** BIOS / firmware metadata (osquery calls this "platform_info"). */
+  bios?: {
+    vendor?: string
+    version?: string
+    date?: string
+    revision?: string
+    address?: string
+    size?: string
+    volume_size?: string
+  }
+  os?: {
+    name?: string
+    version?: string
+    codename?: string
+    major?: string
+    minor?: string
+    patch?: string
+    platform?: string
+    platform_like?: string
+  }
+  /** Runtime/build metadata of the osquery daemon that enrolled. */
+  osquery?: {
+    version?: string
+    build_platform?: string
+    build_distro?: string
+    extensions?: string
+    start_time?: string
+    config_valid?: string
+  }
+}
+
+/** An enrolled system as osctrl serves it (types.NodeView: nodes.OsqueryNode
+ *  plus the projected extras). The list and the detail endpoint return the same
+ *  shape — detail only adds the admin-only node key. */
 export interface OsctrlNode {
   id?: number
   uuid: string
   hostname: string
   localname?: string
   ip_address?: string
+  username?: string
+  osquery_user?: string
   platform?: string
   platform_version?: string
   osquery_version?: string
   environment?: string
+  environment_id?: number
   last_seen?: string
   created_at?: string
+  updated_at?: string
   cpu?: string
+  /** Physical memory in bytes, as a string — osquery reports it that way. */
   memory?: string
-}
-
-/** Full record for one node (osctrl GET /nodes/{env}/node/{uuid}, trimmed).
- *  Richer than the table row: adds the osquery config/enroll context and a few
- *  live counters osctrl tracks per node. */
-export interface OsctrlNodeDetail extends OsctrlNode {
-  node_key?: string
-  username?: string
   hardware_serial?: string
   config_hash?: string
   daemon_hash?: string
   bytes_received?: number
-  /** Last time osctrl saw a config pull / status log / result log from the node. */
-  last_config?: string
-  last_status?: string
-  last_result?: string
-  /** Operator-assigned tags on the node. */
-  tags?: string[]
+  extra_data?: string
+  /** ISO-3166 alpha-2 for ip_address, when osctrl has GeoIP configured. */
+  country_code?: string
+  tags?: OsctrlTag[]
+  health?: OsctrlNodeHealth
+  uptime?: OsctrlNodeUptime
+  posture?: OsctrlNodePosture
+  system_info?: OsctrlNodeEnrichment
+}
+
+/** One node from osctrl GET /nodes/{env}/node/{node} — the environment is part
+ *  of the path, so the front must pass the selected env alongside the uuid. */
+export interface OsctrlNodeDetail extends OsctrlNode {
+  /** Admin-only, and only on this endpoint — the list omits it. */
+  node_key?: string
 }
 
 /** One page of enrolled nodes (osctrl GET /nodes/{env}, its canonical paginated

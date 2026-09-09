@@ -20,3 +20,22 @@ export function isOnline(lastSeen?: string): boolean {
   if (!lastSeen) return false
   return Date.now() - new Date(lastSeen).getTime() < 5 * 60_000
 }
+
+/** Byte counts as osctrl serves them (a string for node memory, a number for
+ *  bytes received) rendered as a human size — "46.5 GB" rather than a raw
+ *  49904668672. Non-numeric values are passed through untouched, since older
+ *  osquery builds report memory as free text. */
+export function formatBytes(v?: string | number): string {
+  if (v == null || v === '') return '—'
+  const n = typeof v === 'number' ? v : Number(String(v).trim())
+  if (!Number.isFinite(n)) return String(v)
+  if (n < 1024) return `${n} B`
+  const units = ['KB', 'MB', 'GB', 'TB', 'PB']
+  let val = n / 1024
+  let i = 0
+  while (val >= 1024 && i < units.length - 1) {
+    val /= 1024
+    i++
+  }
+  return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`
+}
