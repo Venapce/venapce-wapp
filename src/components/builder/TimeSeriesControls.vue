@@ -6,6 +6,7 @@ import {
   CONTRIBUTION_MODES,
   LEGEND_POSITIONS,
   RESAMPLE_METHODS,
+  RESAMPLE_RULES,
   ROLLING_TYPES,
   SERIES_STYLES,
   SORT_SERIES_BY,
@@ -268,10 +269,7 @@ const temporalColumns = computed(() => {
         <div class="flex-1">
           <label class="label">Resample rule</label>
           <select v-model="state.ts.resampleRule" class="field !py-1 !text-xs">
-            <option value="">None</option>
-            <option v-for="g in TIME_GRAINS.filter((t) => t.value)" :key="g.value" :value="g.value">
-              {{ g.label }}
-            </option>
+            <option v-for="r in RESAMPLE_RULES" :key="r.value" :value="r.value">{{ r.label }}</option>
           </select>
         </div>
         <div class="flex-1">

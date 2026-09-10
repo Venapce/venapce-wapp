@@ -161,6 +161,24 @@ export type ComparisonType = (typeof COMPARISON_TYPES)[number]
 export const RESAMPLE_METHODS = ['asfreq', 'zerofill', 'ffill', 'bfill', 'mean', 'median', 'sum'] as const
 export type ResampleMethod = (typeof RESAMPLE_METHODS)[number]
 
+/**
+ * Resample rules are **pandas offset aliases**, not the ISO-8601 durations used
+ * for `time_grain_sqla`. Superset hands `rule` straight to `df.resample(rule)`,
+ * so a grain like `P1D` raises "Invalid frequency: P1D". These are the same
+ * choices Superset's own Advanced Analytics panel offers.
+ */
+export const RESAMPLE_RULES: Array<{ value: string; label: string }> = [
+  { value: '', label: 'None' },
+  { value: '1T', label: 'Minute' },
+  { value: '1H', label: 'Hour' },
+  { value: '1D', label: 'Day' },
+  { value: '7D', label: 'Week' },
+  { value: '1MS', label: 'Month start' },
+  { value: '1M', label: 'Month end' },
+  { value: '1AS', label: 'Year start' },
+  { value: '1A', label: 'Year end' },
+]
+
 export const CONTRIBUTION_MODES = [
   { value: '', label: 'None' },
   { value: 'row', label: 'Series (share of each timestamp)' },
@@ -606,8 +624,15 @@ export function timeSeriesPostProcessing(s: BuilderState): PostProcessingOp[] {
     },
   })
 
+  // `rolling` and `cum` run on the pivoted frame, whose columns are a MultiIndex
+  // keyed by metric label. Both take a source -> target `columns` map naming the
+  // metrics to operate on (the shifted labels too, when comparing). The older
+  // `is_pivot_df: true` shorthand no longer exists — passing it raises
+  // "rolling() got an unexpected keyword argument 'is_pivot_df'".
+  const rollingColumns = Object.fromEntries(allLabels.map((l) => [l, l]))
+
   if (s.ts.rollingType === 'cumsum') {
-    ops.push({ operation: 'cum', options: { operator: 'sum', is_pivot_df: true } })
+    ops.push({ operation: 'cum', options: { operator: 'sum', columns: rollingColumns } })
   } else if (s.ts.rollingType !== 'None') {
     ops.push({
       operation: 'rolling',
@@ -615,7 +640,7 @@ export function timeSeriesPostProcessing(s: BuilderState): PostProcessingOp[] {
         rolling_type: s.ts.rollingType,
         window: Math.max(1, s.ts.rollingPeriods),
         min_periods: Math.max(0, s.ts.minPeriods),
-        is_pivot_df: true,
+        columns: rollingColumns,
       },
     })
   }
@@ -659,7 +684,15 @@ function timeSeriesQuery(s: BuilderState): QueryObject {
   const metrics = s.metrics.map(toSupersetMetric)
   const columns: QueryColumn[] = [baseAxisColumn(s), ...s.dimensions]
   const filters = s.filters.filter((f) => f.col).map(toSupersetFilter)
-  filters.push({ col: s.xAxis, op: 'TEMPORAL_RANGE', val: s.timeRange || 'No filter' })
+  const timeRange = s.timeRange || 'No filter'
+  // A time shift needs both ends of the window to line the offset series up, so
+  // Superset rejects a comparison over an open range ("An enclosed time range
+  // (both start and end) must be specified when using a Time Comparison").
+  // Every other range in TIME_RANGES is enclosed; only 'No filter' is not.
+  if (s.ts.comparisonShift && timeRange === 'No filter') {
+    throw new Error('Pick a time range other than "No filter" to compare against a time shift')
+  }
+  filters.push({ col: s.xAxis, op: 'TEMPORAL_RANGE', val: timeRange })
 
   const q: QueryObject = {
     columns,
@@ -667,7 +700,12 @@ function timeSeriesQuery(s: BuilderState): QueryObject {
     filters,
     row_limit: s.rowLimit,
     order_desc: s.orderDesc,
-    is_timeseries: true,
+    // No `is_timeseries` here on purpose. The x-axis arrives as a BASE_AXIS
+    // adhoc column in `columns` (plus `time_grain_sqla`), which is the modern
+    // generic-axis path. `is_timeseries` is the *legacy* flag, and Superset
+    // pairs it with a `granularity`: models/helpers.py rejects the query with
+    // "Datetime column not provided as part table configuration" when it is set
+    // without one, and nothing back-fills it from the dataset's main_dttm_col.
     series_columns: [...s.dimensions],
     extras: { time_grain_sqla: s.timeGrain || undefined, where: '', having: '' },
     post_processing: timeSeriesPostProcessing(s),
