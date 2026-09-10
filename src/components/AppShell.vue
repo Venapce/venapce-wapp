@@ -4,6 +4,7 @@ import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { useOsctrlStore } from '@/stores/osctrl'
 import { useFlomorphicStore } from '@/stores/flomorphic'
 import { useIssueViewsStore } from '@/stores/issueViews'
+import BrandMark from '@/components/BrandMark.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import VersionBadge from '@/components/VersionBadge.vue'
 import Icon from '@/components/Icon.vue'
@@ -96,11 +97,9 @@ onMounted(() => {
   <div class="flex h-full flex-col bg-bg">
     <!-- Global top bar — brand left, theme selector top-right -->
     <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-surface px-4">
-      <RouterLink :to="{ name: 'dashboards' }" class="flex items-center gap-2.5">
-        <span class="grid h-8 w-8 place-items-center rounded-md bg-accent font-bold text-accent-fg">V</span>
-        <div class="leading-none">
-          <span class="text-[15px] font-bold tracking-tight text-fg">Venapce Posture Presentation</span>
-        </div>
+      <RouterLink :to="{ name: 'dashboards' }" class="flex items-center gap-2 text-base">
+        <BrandMark />
+        <span class="font-bold leading-none tracking-tight text-fg">Venapce Posture Presentation</span>
       </RouterLink>
 
       <div class="flex items-center gap-2">

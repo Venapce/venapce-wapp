@@ -24,6 +24,10 @@
   --line: #e6e5ea;
   --line-strong: #d6d5db;
 
+  /* Brand mark — the owl's own navy, painted onto the glyph via CSS mask
+     (see components/BrandMark.vue), so one asset serves both themes. */
+  --brand-mark: #214d70;
+
   /* Brand accent — synapse teal */
   --accent: #0891b2;
   --accent-hover: #0e7490;
@@ -56,6 +60,8 @@
 
   --line: #2a2c36;
   --line-strong: #383b47;
+
+  --brand-mark: #f6f7f8;
 
   --accent: #22d3ee;
   --accent-hover: #67e8f9;
