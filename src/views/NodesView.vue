@@ -5,6 +5,7 @@ import { useOsctrlStore } from '@/stores/osctrl'
 import { apiErr } from '@/api/venapce'
 import { formatBytes, isOnline, relativeTime } from '@/lib/format'
 import OsIcon from '@/components/OsIcon.vue'
+import Pagination from '@/components/Pagination.vue'
 import type { OsctrlEnvironment, OsctrlNode, OsctrlNodeDetail, OsctrlNodeUptime } from '@/api/types'
 
 // Enrolled systems (osquery nodes) for the selected osctrl environment.
@@ -32,10 +33,6 @@ const selected = ref<OsctrlNode | null>(null)
 const detail = ref<OsctrlNodeDetail | null>(null)
 const detailLoading = ref(false)
 const detailError = ref('')
-
-// 1-indexed row range shown for the current page ("1–50 of 128").
-const rangeStart = computed(() => (totalItems.value === 0 ? 0 : (page.value - 1) * PAGE_SIZE + 1))
-const rangeEnd = computed(() => Math.min(page.value * PAGE_SIZE, totalItems.value))
 
 // osctrl computes each node's triage state server-side (its own inactive
 // threshold, plus posture where that is enabled), so we show what osctrl says
@@ -356,17 +353,15 @@ onMounted(async () => {
     </div>
 
     <!-- Pagination -->
-    <div
+    <Pagination
       v-if="!loading && !error && nodes.length > 0"
-      class="mt-3 flex items-center gap-3 text-sm text-fg-muted"
-    >
-      <span>{{ rangeStart }}–{{ rangeEnd }} of {{ totalItems }}</span>
-      <div class="ml-auto flex items-center gap-2">
-        <button class="btn-outline" :disabled="page <= 1" @click="goToPage(page - 1)">← Prev</button>
-        <span class="tabular-nums">Page {{ page }} of {{ totalPages }}</span>
-        <button class="btn-outline" :disabled="page >= totalPages" @click="goToPage(page + 1)">Next →</button>
-      </div>
-    </div>
+      class="mt-3"
+      :page="page"
+      :total-pages="totalPages"
+      :total-items="totalItems"
+      :page-size="PAGE_SIZE"
+      @update:page="goToPage"
+    />
 
     <!-- Node-detail drawer -->
     <Transition name="drawer">

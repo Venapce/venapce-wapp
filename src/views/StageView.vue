@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useConnectionStore } from '@/stores/connection'
 import { relativeTime } from '@/lib/format'
 import { sampleStage } from '@/lib/samples'
+import Pagination from '@/components/Pagination.vue'
 import type { StageItem } from '@/api/types'
 
 // Stage — the pipeline inbox that precedes Issues. Everything a pipeline feeds
@@ -40,6 +41,17 @@ const filtered = computed(() => {
     if (q && ![i.title, i.summary, i.source].some((f) => (f ?? '').toLowerCase().includes(q))) return false
     return true
   })
+})
+
+// Client-side paging over the filtered set (same shape as Issues). Any filter
+// change lands back on page 1.
+const PAGE_SIZE = 25
+const page = ref(1)
+const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / PAGE_SIZE)))
+const paged = computed(() => filtered.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE))
+watch([search, disposition], () => (page.value = 1))
+watch(totalPages, (n) => {
+  if (page.value > n) page.value = n
 })
 
 async function load() {
@@ -116,7 +128,7 @@ onMounted(load)
           </tr>
         </thead>
         <tbody>
-          <tr v-for="i in filtered" :key="i.id" class="border-t border-line hover:bg-bg">
+          <tr v-for="i in paged" :key="i.id" class="border-t border-line hover:bg-bg">
             <td class="px-4 py-2">
               <span
                 class="rounded-full px-2 py-0.5 text-[11px] font-medium capitalize"
@@ -153,5 +165,15 @@ onMounted(load)
         </tbody>
       </table>
     </div>
+
+    <Pagination
+      v-if="!loading && filtered.length > 0"
+      class="mt-3"
+      :page="page"
+      :total-pages="totalPages"
+      :total-items="filtered.length"
+      :page-size="PAGE_SIZE"
+      @update:page="page = $event"
+    />
   </div>
 </template>

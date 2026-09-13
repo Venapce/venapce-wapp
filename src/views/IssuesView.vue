@@ -4,6 +4,7 @@ import { useConnectionStore } from '@/stores/connection'
 import { useIssueViewsStore } from '@/stores/issueViews'
 import { relativeTime } from '@/lib/format'
 import { sampleIssues } from '@/lib/samples'
+import Pagination from '@/components/Pagination.vue'
 import type { Issue, IssueSeverity } from '@/api/types'
 
 // The Issues axis table. One table for every issue type; a saved sub-view (from
@@ -46,6 +47,18 @@ const filtered = computed(() => {
     }
     return true
   })
+})
+
+// Client-side paging over the filtered set. The backend hands back the whole
+// (view-filtered) list today, so slicing here keeps the table readable without
+// a second round-trip; any filter change lands back on page 1.
+const PAGE_SIZE = 25
+const page = ref(1)
+const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / PAGE_SIZE)))
+const paged = computed(() => filtered.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE))
+watch([search, activeTags, match], () => (page.value = 1), { deep: true })
+watch(totalPages, (n) => {
+  if (page.value > n) page.value = n
 })
 
 const SEVERITY_CLASS: Record<IssueSeverity, string> = {
@@ -178,7 +191,7 @@ onMounted(() => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="i in filtered" :key="i.id" class="border-t border-line hover:bg-bg">
+          <tr v-for="i in paged" :key="i.id" class="border-t border-line hover:bg-bg">
             <td class="px-4 py-2">
               <span
                 class="rounded-full px-2 py-0.5 text-[11px] font-medium capitalize"
@@ -210,5 +223,15 @@ onMounted(() => {
         </tbody>
       </table>
     </div>
+
+    <Pagination
+      v-if="!loading && filtered.length > 0"
+      class="mt-3"
+      :page="page"
+      :total-pages="totalPages"
+      :total-items="filtered.length"
+      :page-size="PAGE_SIZE"
+      @update:page="page = $event"
+    />
   </div>
 </template>

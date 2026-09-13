@@ -34,6 +34,8 @@ export const ICONS = {
   chevronDown: '<path d="m6 9.5 6 6 6-6"/>',
   chevronRight: '<path d="m9.5 6 6 6-6 6"/>',
   chevronLeft: '<path d="m14.5 6-6 6 6 6"/>',
+  chevronsLeft: '<path d="m11.5 6-6 6 6 6"/><path d="m18 6-6 6 6 6"/>',
+  chevronsRight: '<path d="m12.5 6 6 6-6 6"/><path d="m6 6 6 6-6 6"/>',
   arrowRight: '<path d="M4 12h15"/><path d="m13 6 6 6-6 6"/>',
   code: '<path d="m8 7-5 5 5 5"/><path d="m16 7 5 5-5 5"/><path d="M14 4.5 10 19.5"/>',
   eye: '<path d="M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="3"/>',
