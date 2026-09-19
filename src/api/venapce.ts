@@ -46,10 +46,12 @@ import type {
   RunFlowInput,
   RunFlowResult,
   Operation,
+  OperationBundle,
   OperationDetail,
   OperationImportInput,
   OperationPreview,
   OperationRunInput,
+  PackInput,
 } from './types'
 
 // The Venapce backend base URL. In dev the API runs on :8091 (see venapce-api/.env);
@@ -566,6 +568,37 @@ export class VenapceClient {
   /** Start an entry flow of the operation; the run is an activity on the operation. */
   async runOperation(id: number | string, input: OperationRunInput): Promise<RunFlowResult> {
     const { data } = await this.http.post(`/api/operations/${id}/run`, input)
+    return data
+  }
+
+  // ---- the export side: package flows built on the canvas ----
+
+  /** A FloMorphic flow as its portable document (what a package file holds). */
+  async exportFlow(flowId: string): Promise<Record<string, unknown>> {
+    const { data } = await this.http.get(`/api/flows/${encodeURIComponent(flowId)}/export`)
+    return data
+  }
+  /** Build a package from canvas flows: the bundle (preview), or install it bound to those flows. */
+  async packOperation(input: PackInput): Promise<OperationBundle> {
+    const { data } = await this.http.post('/api/operations/pack', input)
+    return data
+  }
+  async packAndInstallOperation(input: PackInput): Promise<OperationDetail> {
+    const { data } = await this.http.post('/api/operations/pack', { ...input, install: true })
+    return data
+  }
+  /** The package as a zip (one top-level folder, the catalog layout). */
+  async packOperationZip(input: PackInput): Promise<Blob> {
+    const { data } = await this.http.post('/api/operations/pack', { ...input, format: 'zip' }, { responseType: 'blob' })
+    return data
+  }
+  /** Download URL of an installed operation's package. */
+  operationPackageUrl(id: number | string): string {
+    return `${this.base}/api/operations/${id}/package.zip`
+  }
+  /** Replace the package's flow file with the bound flow as it is on the canvas now. */
+  async pullOperationFlow(id: number | string, flowKey: string): Promise<OperationDetail> {
+    const { data } = await this.http.post(`/api/operations/${id}/flows/${encodeURIComponent(flowKey)}/pull`)
     return data
   }
 }

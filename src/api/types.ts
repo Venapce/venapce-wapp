@@ -893,9 +893,10 @@ export interface OperationManifest {
   provides?: { tags?: string[]; dashboards?: { file: string; title?: string }[] }
 }
 
-/** Where an installed operation came from, so it can be updated from there. */
+/** Where an installed operation came from, so it can be updated from there.
+ *  `flomorphic` = packed from flows on this install's own canvas. */
 export interface OperationSource {
-  kind: 'url' | 'folder' | 'paste'
+  kind: 'url' | 'folder' | 'paste' | 'flomorphic'
   /** The repository / folder / raw-manifest URL (url kind). */
   url?: string
   /** Path inside the repository, when it is a catalog with many operations. */
@@ -1012,4 +1013,36 @@ export interface OperationRunInput {
   flowKey: string
   /** Extra input merged over the stored params into $.input. */
   input?: unknown
+}
+
+/** One canvas flow picked for packing, with the manifest fields only the author knows. */
+export interface PackFlowInput {
+  flowId: string
+  key?: string
+  role: OperationFlowRole
+  step?: number
+  title?: string
+  description?: string
+  subject?: ('stage' | 'finding' | 'issue')[]
+  schedule?: string
+  writes?: ('stage' | 'findings' | 'issues' | 'activities')[]
+}
+
+/** POST /api/operations/pack — turn FloMorphic flows into a package. Everything
+ *  not given is derived: id from the name, requires from the exports' plugin
+ *  manifests, a README scaffold naming the mission and each flow. */
+export interface PackInput {
+  id?: string
+  name: string
+  version?: string
+  description?: string
+  tags?: string[]
+  scale?: OperationScale[]
+  authors?: string[]
+  license?: string
+  homepage?: string
+  params?: Record<string, OperationParamSpec>
+  flows: PackFlowInput[]
+  readme?: string
+  requires?: OperationRequires
 }

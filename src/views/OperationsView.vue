@@ -10,6 +10,7 @@ import { SCALE_LABEL, operationRoute } from '@/lib/operations'
 import Icon from '@/components/Icon.vue'
 import Badge from '@/components/pipeline/Badge.vue'
 import ImportOperationDialog from '@/components/operations/ImportOperationDialog.vue'
+import PackOperationDialog from '@/components/operations/PackOperationDialog.vue'
 import type { Operation, OperationDetail, OperationScale } from '@/api/types'
 
 // Operations — the installed packages of flows that originate data for the
@@ -31,6 +32,7 @@ const search = ref('')
 const scale = ref<OperationScale | ''>('')
 const tag = ref('')
 const dialog = ref(false)
+const packDialog = ref(false)
 
 const scales = computed(() => {
   const set = new Set<OperationScale>()
@@ -75,6 +77,7 @@ function installed(op: OperationDetail) {
 
 function sourceIcon(o: Operation): string {
   if (o.source.kind === 'url') return o.source.url?.includes('github.com') ? 'github' : 'globe'
+  if (o.source.kind === 'flomorphic') return 'workflow'
   return o.source.kind === 'folder' ? 'folder' : 'code'
 }
 function sourceLabel(o: Operation): string {
@@ -83,17 +86,18 @@ function sourceLabel(o: Operation): string {
     return `${u}${o.source.path ? '/' + o.source.path : ''}`
   }
   if (o.source.kind === 'folder') return `folder · ${o.source.folder ?? ''}`
+  if (o.source.kind === 'flomorphic') return 'packed from FloMorphic flows'
   return 'pasted manifest'
 }
 
-// `?import=1` (the sidebar's Import item) opens the wizard straight away.
+// `?import=1` (the sidebar's Import item) opens the import wizard straight
+// away; `?pack=1` the packer.
 watch(
-  () => route.query.import,
-  (v) => {
-    if (v === '1') {
-      dialog.value = true
-      router.replace({ name: 'operations' })
-    }
+  () => [route.query.import, route.query.pack],
+  ([imp, pack]) => {
+    if (imp === '1') dialog.value = true
+    if (pack === '1') packDialog.value = true
+    if (imp === '1' || pack === '1') router.replace({ name: 'operations' })
   },
   { immediate: true },
 )
@@ -114,6 +118,9 @@ onMounted(() => {
       <div class="ml-auto flex items-center gap-2">
         <input v-model="search" class="field max-w-xs" placeholder="Search operations…" />
         <button class="btn-outline" @click="load()">Refresh</button>
+        <button class="btn-outline whitespace-nowrap" title="Package flows from your FloMorphic canvas" @click="packDialog = true">
+          <Icon name="workflow" :size="14" /> New from FloMorphic
+        </button>
         <button class="btn-primary" @click="dialog = true"><Icon name="download" :size="14" /> Import</button>
       </div>
     </div>
@@ -164,7 +171,10 @@ onMounted(() => {
         Import a package from a catalog repository or a folder on disk. The shipped example — a Linux fleet HTTP audit that writes one Stage
         row per web server — lives in <code class="font-mono text-xs">examples/operations/</code>.
       </p>
-      <button class="btn-primary" @click="dialog = true"><Icon name="download" :size="14" /> Import an operation</button>
+      <div class="flex justify-center gap-2">
+        <button class="btn-outline" @click="packDialog = true"><Icon name="workflow" :size="14" /> New from FloMorphic flows</button>
+        <button class="btn-primary" @click="dialog = true"><Icon name="download" :size="14" /> Import an operation</button>
+      </div>
     </div>
 
     <p v-else-if="filtered.length === 0" class="text-sm text-fg-subtle">No operation matches the filter.</p>
@@ -219,5 +229,6 @@ onMounted(() => {
     </div>
 
     <ImportOperationDialog :open="dialog" :installed="installedKeys" @close="dialog = false" @installed="installed" />
+    <PackOperationDialog :open="packDialog" @close="packDialog = false" @installed="installed" />
   </div>
 </template>

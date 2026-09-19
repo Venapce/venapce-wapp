@@ -44,6 +44,7 @@ watch(
       load()
     }
   },
+  { immediate: true },
 )
 </script>
 

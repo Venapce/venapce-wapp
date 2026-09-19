@@ -116,6 +116,19 @@ const saveParams = () =>
 const installFlow = (f: OperationFlowState) =>
   act(f.key, () => conn.client.installOperationFlow(props.id, f.key), `"${f.title || f.key}" installed into FloMorphic.`)
 const update = () => act('update', () => conn.client.updateOperation(props.id), 'Package re-read from its source.')
+const pullFlow = (f: OperationFlowState) =>
+  window.confirm(
+    `Replace the package's "${f.file}" with the flow as it is on the FloMorphic canvas now? Any \${param.…} placeholders in the file are replaced by the canvas values.`,
+  ) && act('pull:' + f.key, () => conn.client.pullOperationFlow(props.id, f.key), `"${f.title || f.key}" pulled from FloMorphic into the package.`)
+
+/** Download the installed package as a zip (one folder, the catalog layout). */
+function exportZip() {
+  if (sample.value) {
+    error.value = 'Sample data — connect the backend to export an operation.'
+    return
+  }
+  window.open(conn.client.operationPackageUrl(props.id), '_blank', 'noopener')
+}
 
 async function remove() {
   if (!op.value || !window.confirm(`Remove "${op.value.name}"? Its flows stay in FloMorphic; only the package and its history here are removed.`)) return
@@ -181,6 +194,7 @@ function sourceLabel(): string {
   if (!s) return ''
   if (s.kind === 'url') return `${s.url}${s.path ? ' · ' + s.path : ''}${s.ref ? ' @' + s.ref : ''}`
   if (s.kind === 'folder') return `local folder "${s.folder}"`
+  if (s.kind === 'flomorphic') return 'packed from flows on this FloMorphic'
   return 'pasted manifest'
 }
 
@@ -219,6 +233,9 @@ onMounted(() => {
           {{ op.readiness.ready ? 'ready' : 'needs setup' }}
         </span>
         <div class="ml-auto flex items-center gap-2">
+          <button class="btn-outline btn-sm" title="Download the package as a zip — for a catalog repository or another Venapce" @click="exportZip">
+            <Icon name="upload" :size="13" /> Export .zip
+          </button>
           <button v-if="op.source.kind === 'url'" class="btn-outline btn-sm" :disabled="!!busy" title="Re-read the package from its source" @click="update">
             <Icon name="refresh" :size="13" :class="busy === 'update' && 'animate-spin'" /> Update
           </button>
@@ -321,6 +338,9 @@ onMounted(() => {
                       </button>
                       <button class="btn-outline btn-sm" title="Push the file again (after a parameter change or a package update)" :disabled="!!busy" @click="installFlow(f)">
                         <Icon name="refresh" :size="13" /> Re-install
+                      </button>
+                      <button class="icon-btn-sm" title="Pull the flow as edited on the canvas back into the package file" :disabled="!!busy" @click="pullFlow(f)">
+                        <Icon name="download" :size="13" />
                       </button>
                     </template>
                     <template v-else>
