@@ -41,10 +41,27 @@ const routes: RouteRecordRaw[] = [
       },
       { path: 'issues', name: 'issues', component: () => import('@/views/IssuesView.vue') },
       { path: 'issues/:id(\\d+)', name: 'issue-detail', component: () => import('@/views/IssueDetailView.vue'), props: true },
+      // Activities: the history of every pipeline row + flow-run outcomes.
+      { path: 'activities', name: 'activities', component: () => import('@/views/ActivitiesView.vue') },
+      {
+        path: 'activities/:id(\\d+)',
+        name: 'activity-detail',
+        component: () => import('@/views/ActivityDetailView.vue'),
+        props: true,
+      },
       {
         path: 'issues/view/:viewId',
         name: 'issues-view',
         component: () => import('@/views/IssuesView.vue'),
+        props: true,
+      },
+
+      // Operations: installed packages of flows that originate pipeline data.
+      { path: 'operations', name: 'operations', component: () => import('@/views/OperationsView.vue') },
+      {
+        path: 'operations/:id',
+        name: 'operation-detail',
+        component: () => import('@/views/OperationDetailView.vue'),
         props: true,
       },
 

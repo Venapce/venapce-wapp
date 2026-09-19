@@ -6,14 +6,18 @@ import JsonPanel from '@/components/json/JsonPanel.vue'
 import PipelineChain from './PipelineChain.vue'
 import RecordFields from './RecordFields.vue'
 import RecordEditor from './RecordEditor.vue'
+import ActivityTimeline from './ActivityTimeline.vue'
+import FactPill from './FactPill.vue'
 import { JSON_DOCS, type FieldSpec } from '@/lib/pipeline'
 import { relativeTime } from '@/lib/format'
 
 // The detail page every pipeline table shares: back link + title + badges,
 // the row's place in the stage → finding → issue chain, its fields (or the
-// editor), and the three JSON documents as explorable trees. The view that
-// wraps it supplies the badges, the actions (promote / delete) and any related
-// rows through slots; it owns loading and saving.
+// editor), the three JSON documents as explorable trees, and the row's
+// activity timeline (every flow run on it with its outcome, every edit — with
+// the "Run flow" action). The view that wraps it supplies the badges, the
+// actions (promote / delete) and any related rows through slots; it owns
+// loading and saving.
 const props = defineProps<{
   kind: 'stage' | 'finding' | 'issue'
   /** Where "← back" goes and what it says. */
@@ -124,25 +128,7 @@ const timestamps = computed(() => {
         <h1 class="text-xl font-semibold leading-tight text-fg">{{ title }}</h1>
         <div v-if="summaryFacts" class="mt-2.5 flex flex-wrap items-center gap-1.5">
           <!-- two-tone fact pills: label on the muted side, value on the bright side -->
-          <span
-            v-for="(f, i) in summaryFacts"
-            :key="i"
-            class="inline-flex items-stretch overflow-hidden rounded-md border border-line text-xs leading-none shadow-sm"
-          >
-            <span v-if="f.label" class="flex items-center gap-1 bg-surface-2 px-2 py-1.5 text-fg-muted">
-              {{ f.label }}
-            </span>
-            <span
-              class="flex items-center px-2 py-1.5 font-semibold"
-              :class="[
-                /^-?\d+([.,]\d+)?%?$/.test(f.value) ? 'bg-accent-soft text-accent' : 'bg-surface text-fg',
-                f.label ? '' : 'gap-1.5 font-mono',
-              ]"
-            >
-              <Icon v-if="!f.label" name="monitor" :size="12" class="text-fg-subtle" />
-              {{ f.value }}
-            </span>
-          </span>
+          <FactPill v-for="(f, i) in summaryFacts" :key="i" :label="f.label || undefined" :value="f.value" :icon="f.label ? undefined : 'monitor'" />
         </div>
         <p v-else-if="row.summary" class="mt-1 max-w-3xl text-sm text-fg-muted">{{ row.summary }}</p>
         <div class="mt-3 flex flex-wrap items-center gap-2">
@@ -198,6 +184,11 @@ const timestamps = computed(() => {
             :collapsed="d.key === 'ref'"
           />
         </div>
+      </div>
+
+      <!-- the row's history: flow runs + their outcomes, edits, promotions -->
+      <div v-if="!editing" class="mt-6 max-w-4xl">
+        <ActivityTimeline :kind="kind" :id="row.id as number | string" :disabled="sample" />
       </div>
     </template>
   </div>

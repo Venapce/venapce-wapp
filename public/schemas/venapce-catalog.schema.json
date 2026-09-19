@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://venapce.inflowenger.com/schemas/catalog-1.json",
+  "title": "Venapce operations catalog",
+  "description": "catalog.json at the root of a repository that ships operations. Optional — without it the importer scans the repository for folders holding an operation.json — but with it the panel can list what the catalog offers before cloning anything.",
+  "type": "object",
+  "required": ["schema", "name", "operations"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema": { "const": 1 },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "homepage": { "type": "string", "format": "uri" },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "path"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "path": { "type": "string", "description": "Folder holding the operation.json, relative to the repository root." },
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "description": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "scale": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

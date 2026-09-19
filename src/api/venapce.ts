@@ -38,6 +38,18 @@ import type {
   StageQuery,
   SupersetDatabase,
   SupersetSettingsView,
+  Activity,
+  ActivityDetail,
+  ActivityInput,
+  ActivityQuery,
+  FlowSummary,
+  RunFlowInput,
+  RunFlowResult,
+  Operation,
+  OperationDetail,
+  OperationImportInput,
+  OperationPreview,
+  OperationRunInput,
 } from './types'
 
 // The Venapce backend base URL. In dev the API runs on :8091 (see venapce-api/.env);
@@ -436,6 +448,124 @@ export class VenapceClient {
     input: PromoteInput = {},
   ): Promise<{ stage: StageItem; finding?: Finding; issue?: Issue }> {
     const { data } = await this.http.post(`/api/stage/${id}/promote`, { ...input, to }, { params: { to } })
+    return data
+  }
+
+  // ---- Activities (history + flow outcomes) ----
+  // Every change to a pipeline row is an activity on it; a `run` is a
+  // FloMorphic flow executed on the row, completed in the background.
+
+  /** The FloMorphic flows an operator can run a row through. */
+  async listFlows(search = ''): Promise<FlowSummary[]> {
+    const { data } = await this.http.get('/api/flows', { params: search ? { search } : {} })
+    return data
+  }
+  async listActivities(q: ActivityQuery = {}): Promise<Activity[]> {
+    const params: Record<string, string> = {}
+    if (q.subjectKind) params.subjectKind = q.subjectKind
+    if (q.subjectId != null) params.subjectId = String(q.subjectId)
+    if (q.kind) params.kind = q.kind
+    if (q.status) params.status = q.status
+    if (q.flowId) params.flowId = q.flowId
+    if (q.tags?.length) params.tags = q.tags.join(',')
+    if (q.match) params.match = q.match
+    if (q.search) params.search = q.search
+    if (q.limit) params.limit = String(q.limit)
+    const { data } = await this.http.get('/api/activities', { params })
+    return data
+  }
+  async activityTags(): Promise<string[]> {
+    const { data } = await this.http.get('/api/activities/tags')
+    return data
+  }
+  async getActivity(id: number | string): Promise<ActivityDetail> {
+    const { data } = await this.http.get(`/api/activities/${id}`)
+    return data
+  }
+  /** Record a manual activity (a note, a conclusion of one's own) on a row. */
+  async createActivity(input: ActivityInput & { subjectKind: string; subjectId: number | string }): Promise<Activity> {
+    const { data } = await this.http.post('/api/activities', input)
+    return data
+  }
+  async updateActivity(id: number | string, input: ActivityInput): Promise<Activity> {
+    const { data } = await this.http.put(`/api/activities/${id}`, input)
+    return data
+  }
+  async deleteActivity(id: number | string): Promise<void> {
+    await this.http.delete(`/api/activities/${id}`)
+  }
+  /** Pull the run's current state from FloMorphic now. */
+  async syncActivity(id: number | string): Promise<Activity> {
+    const { data } = await this.http.post(`/api/activities/${id}/sync`)
+    return data
+  }
+  /** Stop the run on the engine. */
+  async stopActivity(id: number | string): Promise<Activity> {
+    const { data } = await this.http.post(`/api/activities/${id}/stop`)
+    return data
+  }
+  /** Send one or more rows through a flow; returns the started activities. */
+  async runFlow(input: RunFlowInput): Promise<RunFlowResult> {
+    const { data } = await this.http.post('/api/activities/run', input)
+    return data
+  }
+
+  // ---- Operations (packaged flows that originate data) ----
+  // A package is imported from a URL (the backend fetches the folder) or from
+  // a bundle the browser read off a local folder; the backend keeps the
+  // manifest + files, binds each manifest flow to a FloMorphic flow, computes
+  // readiness against the live osctrl / plugin state, and starts entry runs.
+
+  async listOperations(): Promise<Operation[]> {
+    const { data } = await this.http.get('/api/operations')
+    return data
+  }
+  async getOperation(id: number | string): Promise<OperationDetail> {
+    const { data } = await this.http.get(`/api/operations/${id}`)
+    return data
+  }
+  /** Resolve + validate a package without installing it (`dryRun`), or install it. */
+  async previewOperation(input: OperationImportInput): Promise<OperationPreview> {
+    const { data } = await this.http.post('/api/operations/import', { ...input, dryRun: true })
+    return data
+  }
+  async importOperation(input: OperationImportInput): Promise<OperationDetail> {
+    const { data } = await this.http.post('/api/operations/import', { ...input, dryRun: false })
+    return data
+  }
+  /** Re-fetch the package from its source and re-install a newer version. */
+  async updateOperation(id: number | string): Promise<OperationDetail> {
+    const { data } = await this.http.post(`/api/operations/${id}/update`)
+    return data
+  }
+  async saveOperationParams(id: number | string, params: Record<string, unknown>): Promise<OperationDetail> {
+    const { data } = await this.http.put(`/api/operations/${id}/params`, { params })
+    return data
+  }
+  async deleteOperation(id: number | string): Promise<void> {
+    await this.http.delete(`/api/operations/${id}`)
+  }
+  /** Push one manifest flow (params substituted) into FloMorphic and bind the key to the created flow. */
+  async installOperationFlow(id: number | string, flowKey: string): Promise<OperationDetail> {
+    const { data } = await this.http.post(`/api/operations/${id}/flows/${encodeURIComponent(flowKey)}/install`)
+    return data
+  }
+  /** Bind a manifest flow key to a flow that already exists in FloMorphic. */
+  async linkOperationFlow(id: number | string, flowKey: string, flowId: string): Promise<OperationDetail> {
+    const { data } = await this.http.put(`/api/operations/${id}/flows/${encodeURIComponent(flowKey)}`, { flowId })
+    return data
+  }
+  /** The flow file as it would be installed — params substituted — for a manual import into FloMorphic. */
+  async operationFlowFile(id: number | string, flowKey: string): Promise<string> {
+    const { data } = await this.http.get(`/api/operations/${id}/flows/${encodeURIComponent(flowKey)}/file`, {
+      responseType: 'text',
+      transformResponse: (r) => r,
+    })
+    return typeof data === 'string' ? data : JSON.stringify(data, null, 2)
+  }
+  /** Start an entry flow of the operation; the run is an activity on the operation. */
+  async runOperation(id: number | string, input: OperationRunInput): Promise<RunFlowResult> {
+    const { data } = await this.http.post(`/api/operations/${id}/run`, input)
     return data
   }
 }

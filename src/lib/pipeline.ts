@@ -89,12 +89,61 @@ export const ISSUE_STATUS_ICON: Record<string, string> = {
   closed: 'archive',
 }
 
+// Activities: what happened to a row. `run` is a FloMorphic flow executed on
+// it; the rest are manual / pipeline changes.
+export const ACTIVITY_KINDS = ['run', 'edit', 'promote', 'create', 'note']
+
+export const ACTIVITY_KIND_CLASS: Record<string, string> = {
+  run: 'bg-accent-soft text-accent',
+  edit: 'bg-surface-2 text-fg-muted',
+  promote: 'bg-success-soft text-success',
+  create: 'bg-surface-2 text-fg-muted',
+  note: 'bg-warning-soft text-warning',
+}
+
+export const ACTIVITY_KIND_ICON: Record<string, string> = {
+  run: 'workflow',
+  edit: 'pencil',
+  promote: 'arrowUpRight',
+  create: 'sparkle',
+  note: 'note',
+}
+
+// Activity status mirrors FloMorphic's process lifecycle; a manual activity is
+// simply `finished`.
+export const ACTIVITY_STATUSES = ['scheduled', 'running', 'waiting', 'finished', 'stopped', 'failed']
+
+export const ACTIVITY_STATUS_CLASS: Record<string, string> = {
+  scheduled: 'bg-surface-2 text-fg-muted',
+  running: 'bg-accent-soft text-accent',
+  waiting: 'bg-warning-soft text-warning',
+  finished: 'bg-success-soft text-success',
+  stopped: 'bg-surface-2 text-fg-subtle',
+  failed: 'bg-danger-soft text-danger',
+}
+
+export const ACTIVITY_STATUS_ICON: Record<string, string> = {
+  scheduled: 'clock',
+  running: 'loader',
+  waiting: 'pause',
+  finished: 'checkCircle',
+  stopped: 'ban',
+  failed: 'xCircle',
+}
+
+/** True while a run is still in flight on FloMorphic (worth polling). */
+export function activityOpen(status?: string): boolean {
+  return status === 'scheduled' || status === 'running' || status === 'waiting'
+}
+
 /** One lookup for <Badge kind=…>: the colour map + icon map of each lifecycle field. */
 export const BADGE_KINDS = {
   severity: { classes: SEVERITY_CLASS, icons: SEVERITY_ICON, fallbackIcon: 'info' },
   disposition: { classes: DISPOSITION_CLASS, icons: DISPOSITION_ICON, fallbackIcon: 'inbox' },
   'finding-status': { classes: FINDING_STATUS_CLASS, icons: FINDING_STATUS_ICON, fallbackIcon: 'circleDot' },
   'issue-status': { classes: ISSUE_STATUS_CLASS, icons: ISSUE_STATUS_ICON, fallbackIcon: 'circleDot' },
+  'activity-kind': { classes: ACTIVITY_KIND_CLASS, icons: ACTIVITY_KIND_ICON, fallbackIcon: 'activity' },
+  'activity-status': { classes: ACTIVITY_STATUS_CLASS, icons: ACTIVITY_STATUS_ICON, fallbackIcon: 'circleDot' },
 } as const
 
 export type BadgeKind = keyof typeof BADGE_KINDS
@@ -152,10 +201,31 @@ export function docShape(v: unknown): string {
   return typeof v
 }
 
-/** Route location for a pipeline row's detail page. */
-export function rowRoute(kind: 'stage' | 'finding' | 'issue', id: number | string) {
-  const name = kind === 'stage' ? 'stage-detail' : kind === 'finding' ? 'finding-detail' : 'issue-detail'
+/** Route location for a pipeline row's (or an activity's) detail page. */
+export function rowRoute(kind: 'stage' | 'finding' | 'issue' | 'activity' | 'operation', id: number | string) {
+  const name =
+    kind === 'stage'
+      ? 'stage-detail'
+      : kind === 'finding'
+        ? 'finding-detail'
+        : kind === 'issue'
+          ? 'issue-detail'
+          : kind === 'operation'
+            ? 'operation-detail'
+            : 'activity-detail'
   return { name, params: { id: String(id) } }
+}
+
+/** Sidebar icon of each subject kind, for activity rows that link back to their subject. */
+export const SUBJECT_ICON: Record<string, string> = { stage: 'inbox', finding: 'target', issue: 'flag', operation: 'box' }
+
+/** A fact's value as a short string for a chip ("low", "7.5", "3 items", "{…}"). */
+export function factText(v: unknown): string {
+  if (v == null) return '—'
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  if (Array.isArray(v)) return v.every((e) => typeof e !== 'object') ? v.join(', ') : `${v.length} items`
+  return JSON.stringify(v)
 }
 
 /** A typed link is "set" when it is a positive id (the backend uses 0 for none). */

@@ -1,0 +1,367 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://venapce.inflowenger.com/schemas/operation-1.json",
+  "title": "Venapce operation manifest",
+  "description": "operation.json \u2014 the package descriptor of a Venapce operation: a bundle of one or more FloMorphic workflows that together carry out one mission for an organization's Stage \u2192 Findings \u2192 Issues pipeline (a sweep that originates rows, the triage that advances them, a sync that reports them), together with everything the estate must provide for those workflows to run (osctrl, FloMorphic plugins, settings profiles, other operations). One folder = one operation, and every package ships a README that explains the mission as a whole and the part each flow plays. A catalog repository holds one folder per operation.",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "name",
+    "version",
+    "flows"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional pointer to this schema, for editor completion."
+    },
+    "schema": {
+      "const": 1,
+      "description": "Manifest format version. Bumped only when this document's shape changes."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "description": "Stable slug. Unique within a catalog; an install is keyed by <catalog>/<id>."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Display name."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$",
+      "description": "Semver. An import of the same id with a higher version is an upgrade."
+    },
+    "description": {
+      "type": "string",
+      "description": "One paragraph: what the operation finds out and where it writes it."
+    },
+    "readme": {
+      "type": "string",
+      "default": "README.md",
+      "description": "Path (relative to the manifest) of the package's documentation. REQUIRED to exist: the import refuses a package without it. It explains the mission of the whole operation and \u2014 one section per flow, in step order \u2014 what each flow does, what it reads, what it writes and what to check afterwards. Rendered on the operation page."
+    },
+    "homepage": {
+      "type": "string",
+      "format": "uri"
+    },
+    "license": {
+      "type": "string"
+    },
+    "authors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Free classification (linux, web, exposure, compliance \u2026). Rows the flows write usually carry a subset of these."
+    },
+    "scale": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "workstation",
+          "smb",
+          "vps",
+          "fleet",
+          "enterprise",
+          "network",
+          "cloud"
+        ]
+      },
+      "description": "Which kind of estate the operation is meant for \u2014 a catalog filter, not a gate. `network` = routers / switches reached through a probe node; `vps` = a handful of servers; `fleet` = hundreds of enrolled endpoints."
+    },
+    "venapce": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "min": {
+          "type": "string",
+          "description": "Lowest Venapce version the operation was verified on."
+        }
+      }
+    },
+    "params": {
+      "type": "object",
+      "description": "Operator-set values that adapt the package to one organization (osctrl tags, environment name, thresholds, an allow-list). Flow files reference a param as `${param.<name>}`: a string value that is exactly the placeholder is replaced by the param's value with its own type (so an array param can stand in for a `tags` list), and a placeholder inside a longer string is interpolated as text. Substitution happens at install time; the whole param set is also handed to every run as `$.input.params`.",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "enum": [
+              "string",
+              "number",
+              "boolean",
+              "string[]",
+              "json"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "default": {},
+          "required": {
+            "type": "boolean",
+            "default": false
+          },
+          "enum": {
+            "type": "array",
+            "items": {}
+          },
+          "secret": {
+            "type": "boolean",
+            "default": false,
+            "description": "Stored encrypted, never echoed back."
+          }
+        }
+      }
+    },
+    "flows": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The FloMorphic workflows in the package (FloMorphic workflow export files, `flomorphic.kind = workflow`). A multi-step mission lists several: give each its `step` so the page presents them in order.",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "file",
+          "role"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Package-local handle for the flow (the install links this key to a FloMorphic flow id)."
+          },
+          "file": {
+            "type": "string",
+            "description": "Path of the workflow export, relative to the manifest."
+          },
+          "title": {
+            "type": "string",
+            "description": "Overrides the export's own title when set."
+          },
+          "description": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "entry",
+              "on-row",
+              "helper"
+            ],
+            "description": "`entry` \u2014 an originating run: starts from an empty context (plus params) and produces rows; the Run button on the operation page. `on-row` \u2014 runs against one pipeline row (the Run-flow picker on a Stage/Finding/Issue; reads $.row, writes $.outcome). `helper` \u2014 called by other flows, never started by hand."
+          },
+          "step": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Position of the flow in the mission (1 = first). Flows sharing a step run independently of each other; a flow without a step is shown after the numbered ones."
+          },
+          "doc": {
+            "type": "string",
+            "description": "Path (relative to the manifest) of a Markdown file documenting this one flow in depth \u2014 topology, the nodes to review after import, what it writes. Shown inline under the flow on the operation page. The README still carries the flow's summary."
+          },
+          "subject": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "stage",
+                "finding",
+                "issue"
+              ]
+            },
+            "description": "For `on-row` flows: which pipeline levels the flow accepts."
+          },
+          "schedule": {
+            "type": "string",
+            "description": "Suggested cron expression for an `entry` flow (5 fields, UTC). Advisory \u2014 the operator confirms it at install."
+          },
+          "writes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "stage",
+                "findings",
+                "issues",
+                "activities"
+              ]
+            },
+            "description": "Pipeline tables the flow writes to."
+          }
+        }
+      }
+    },
+    "requires": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What must be up before the flows can run. Every entry is shown as a readiness check on the operation page, with a link to where it is fixed.",
+      "properties": {
+        "osctrl": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "required": {
+              "type": "boolean",
+              "default": true
+            },
+            "targets": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "osquery",
+                  "linux",
+                  "windows",
+                  "darwin",
+                  "network"
+                ]
+              },
+              "description": "What must be enrolled for the operation to see anything."
+            },
+            "minNodes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "note": {
+              "type": "string",
+              "description": "Shown next to the check (e.g. which tags the sweeps select)."
+            }
+          }
+        },
+        "plugins": {
+          "type": "array",
+          "description": "FloMorphic plugins the flows call, keyed by action method names (the portable id across installs \u2014 a plugin id is per-install). `venapce` itself is implied by any `db.*` / `osquery.*` action and may be omitted.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "actions"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "actions": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "repo": {
+                "type": "string",
+                "description": "Git remote to install the plugin from."
+              },
+              "ref": {
+                "type": "string"
+              },
+              "subdir": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "settings": {
+          "type": "array",
+          "description": "FloMorphic Node Settings profiles the operator must pick after install (the export never carries one).",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "llm",
+                  "embedding",
+                  "store",
+                  "smtp",
+                  "http-auth",
+                  "other"
+                ]
+              },
+              "for": {
+                "type": "string",
+                "description": "Which node(s) need it, by title or ref."
+              },
+              "note": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "operations": {
+          "type": "array",
+          "description": "Other operations that must be installed first (their `id`, optionally with a semver range: `id@>=1.2`).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "datasets": {
+          "type": "array",
+          "description": "Superset datasets the operation's dashboards read (registered under Visualizations \u2192 Datasets).",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "provides": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What the operation leaves behind, so the panel can point at it.",
+      "properties": {
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Tags the written rows carry \u2014 the panel offers a saved Issues view per operation from these."
+        },
+        "dashboards": {
+          "type": "array",
+          "description": "Native Venapce dashboard definitions (charts + layout) bundled with the package.",
+          "items": {
+            "type": "object",
+            "required": [
+              "file"
+            ],
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

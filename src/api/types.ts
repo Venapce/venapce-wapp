@@ -707,3 +707,309 @@ export type StageInput = Partial<
 export interface PromoteInput extends FindingInput {
   assignee?: string
 }
+
+// ---- Activities (a row's history + flow outcomes) ----
+// Every stage / finding / issue row is changed by hand and — above all — by
+// FloMorphic flows; each change is an activity on that SUBJECT row. A `run`
+// activity is one flow executed on one row: the row goes to FloMorphic as the
+// run's context document, and when the process ends its `outcome` is lifted
+// into the typed fields below (title, description, remediation, proof, facts,
+// tags) with the whole output kept in `data`.
+
+// `operation` is the subject of an originating run — an operation's `entry`
+// flow started from the Operations page with no pipeline row behind it. Its
+// outcome (how many rows it wrote, errors) lands on the operation's timeline.
+export type SubjectKind = 'stage' | 'finding' | 'issue' | 'operation'
+
+export type ActivityKind = 'run' | 'edit' | 'promote' | 'create' | 'note' | string
+
+/** Mirrors FloMorphic's process lifecycle; a manual activity is simply `finished`. */
+export type ActivityStatus = 'scheduled' | 'running' | 'waiting' | 'finished' | 'stopped' | 'failed' | string
+
+/** One typed key/value of an outcome: [{ k: "severity", v: "low" }]. `v` is any JSON. */
+export interface ActivityFact {
+  k: string
+  v: unknown
+}
+
+export interface Activity {
+  id: number | string
+  subjectKind: SubjectKind
+  subjectId: number | string
+  kind: ActivityKind
+  status: ActivityStatus
+  title: string
+  /** What the flow (or person) concluded, in words. */
+  description?: string
+  /** What to do about it. */
+  remediation?: string
+  /** The evidence the conclusion rests on. */
+  proof?: string
+  facts?: ActivityFact[]
+  tags?: string[]
+  /** Which process produced it: flow:<id> | manual | <caller-supplied>. */
+  origin?: string
+  flowId?: string
+  flowTitle?: string
+  /** FloMorphic run identity (0 / empty for a manual activity). */
+  processId?: number
+  pid?: string
+  contextId?: string
+  error?: string
+  /** Provenance: process bookkeeping, or the field diff of an edit ({changed:{field:{from,to}}}). */
+  ref?: JsonDoc
+  /** The run's output document, any shape. */
+  data?: JsonDoc
+  meta?: JsonDoc
+  startedAt?: string | null
+  finishedAt?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+/** Filter passed to GET /api/activities. */
+export interface ActivityQuery {
+  subjectKind?: SubjectKind
+  subjectId?: number | string
+  kind?: ActivityKind
+  status?: ActivityStatus
+  flowId?: string
+  tags?: string[]
+  match?: 'any' | 'all'
+  search?: string
+  limit?: number
+}
+
+/** GET /api/activities/:id — the activity plus its subject row for the header. */
+export interface ActivityDetail {
+  item: Activity
+  subject: Record<string, unknown> | null
+}
+
+/** Editable subset sent on PUT /api/activities/:id (partial — absent = keep). */
+export type ActivityInput = Partial<
+  Pick<Activity, 'kind' | 'status' | 'title' | 'description' | 'remediation' | 'proof' | 'tags' | 'origin' | 'ref' | 'data' | 'meta'>
+> & { facts?: ActivityFact[] | Record<string, unknown> }
+
+/** A FloMorphic workflow, as the run picker lists it. */
+export interface FlowSummary {
+  id: string
+  title: string
+  createdAt?: number
+  updatedAt?: number
+}
+
+/** POST /api/activities/run — send one or more rows through a flow. */
+export interface RunFlowInput {
+  flowId: string
+  subject?: { kind: SubjectKind; id: number | string }
+  subjects?: { kind: SubjectKind; id: number | string }[]
+  /** Optional activity title (the flow's title otherwise). */
+  title?: string
+  /** Optional extra input, handed to the flow as $.input. */
+  input?: unknown
+}
+
+export interface RunFlowResult {
+  activities: Activity[]
+  /** Set when some subjects could not be launched. */
+  error?: string
+}
+
+// ---- Operations (packaged flows that originate data) ----
+// An operation is the unit of "feature" in Venapce: a folder holding one or
+// more FloMorphic workflow exports plus an `operation.json` manifest that says
+// what the estate must provide (osctrl, plugins, settings profiles, other
+// operations) and which knobs adapt it to one organization (`params`). The
+// entry flow of an operation is what STIMULATES the pipeline — it originates
+// Stage / Findings / Issues rows the rest of the panel then works on. Packages
+// come from a catalog repository (one folder per operation) or a local folder.
+// Schema: public/schemas/venapce-operation.schema.json.
+
+export type OperationFlowRole = 'entry' | 'on-row' | 'helper'
+export type OperationScale = 'workstation' | 'smb' | 'vps' | 'fleet' | 'enterprise' | 'network' | 'cloud'
+export type OperationParamType = 'string' | 'number' | 'boolean' | 'string[]' | 'json'
+
+export interface OperationParamSpec {
+  type: OperationParamType
+  label?: string
+  description?: string
+  default?: unknown
+  required?: boolean
+  enum?: unknown[]
+  secret?: boolean
+}
+
+export interface OperationFlowSpec {
+  key: string
+  file: string
+  title?: string
+  description?: string
+  role: OperationFlowRole
+  /** Position in the mission (1 = first); flows sharing a step are independent. */
+  step?: number
+  /** Per-flow Markdown doc (path relative to the manifest), shown under the flow. */
+  doc?: string
+  subject?: ('stage' | 'finding' | 'issue')[]
+  schedule?: string
+  writes?: ('stage' | 'findings' | 'issues' | 'activities')[]
+}
+
+export interface OperationPluginReq {
+  name: string
+  actions: string[]
+  repo?: string
+  ref?: string
+  subdir?: string
+  note?: string
+}
+
+export interface OperationRequires {
+  osctrl?: { required?: boolean; targets?: string[]; minNodes?: number; note?: string }
+  plugins?: OperationPluginReq[]
+  settings?: { kind: string; for?: string; note?: string }[]
+  operations?: string[]
+  datasets?: string[]
+}
+
+/** The manifest as written in `operation.json`. */
+export interface OperationManifest {
+  $schema?: string
+  schema: 1
+  id: string
+  name: string
+  version: string
+  description?: string
+  readme?: string
+  homepage?: string
+  license?: string
+  authors?: string[]
+  tags?: string[]
+  scale?: OperationScale[]
+  venapce?: { min?: string }
+  params?: Record<string, OperationParamSpec>
+  flows: OperationFlowSpec[]
+  requires?: OperationRequires
+  provides?: { tags?: string[]; dashboards?: { file: string; title?: string }[] }
+}
+
+/** Where an installed operation came from, so it can be updated from there. */
+export interface OperationSource {
+  kind: 'url' | 'folder' | 'paste'
+  /** The repository / folder / raw-manifest URL (url kind). */
+  url?: string
+  /** Path inside the repository, when it is a catalog with many operations. */
+  path?: string
+  /** Branch / tag / commit the import resolved to. */
+  ref?: string
+  /** The folder name the browser read (folder kind). */
+  folder?: string
+}
+
+/** One manifest flow as installed: the FloMorphic flow it is bound to, if any. */
+export interface OperationFlowState extends OperationFlowSpec {
+  /** FloMorphic flow id this key is bound to (empty until installed / linked). */
+  flowId?: string
+  /** Title of the bound flow as FloMorphic has it. */
+  flowTitle?: string
+  /** When the flow file was last pushed into FloMorphic. */
+  installedAt?: string
+  /** Actions the installed flow calls that no plugin on FloMorphic provides
+   *  (reported by the install; the nodes are kept, badged "unrecognized"). */
+  missingActions?: { action: string; plugin: string; repo?: string; nodes?: string[] }[]
+  /** The compile check's error at install time, if any (advisory). */
+  compileError?: string
+  /** Last run of this flow started from the operation. */
+  lastRun?: Pick<Activity, 'id' | 'status' | 'title' | 'startedAt' | 'finishedAt' | 'error'>
+}
+
+/** One readiness check of a requirement — what the operation page ticks off. */
+export interface ReadinessCheck {
+  /** Which requirement family it belongs to. */
+  kind: 'osctrl' | 'plugin' | 'settings' | 'operation' | 'dataset' | 'flow' | 'param'
+  label: string
+  status: 'ok' | 'missing' | 'unknown'
+  /** What is wrong / what to do (missing) or what was verified (ok). */
+  detail?: string
+  /** Where it is fixed: a panel route name (settings, nodes-enroll, operations …). */
+  fix?: string
+  /** External link (a plugin repo to install, FloMorphic's extensions page). */
+  href?: string
+}
+
+export interface OperationReadiness {
+  ready: boolean
+  checks: ReadinessCheck[]
+}
+
+/** An installed operation, as the list shows it. */
+export interface Operation {
+  id: number | string
+  /** manifest.id — unique together with the source. */
+  key: string
+  name: string
+  version: string
+  description?: string
+  tags?: string[]
+  scale?: OperationScale[]
+  source: OperationSource
+  /** Operator values of the manifest params (secrets omitted). */
+  params?: Record<string, unknown>
+  /** Whether every flow is bound and every requirement is met (a cached summary). */
+  ready?: boolean
+  /** How many of the manifest's flows are bound to a FloMorphic flow. */
+  flowsBound?: number
+  flowsTotal?: number
+  lastRunAt?: string
+  lastRunStatus?: ActivityStatus
+  installedAt?: string
+  updatedAt?: string
+}
+
+export interface OperationDetail extends Operation {
+  manifest: OperationManifest
+  flows: OperationFlowState[]
+  readiness: OperationReadiness
+  /** The README's text (Markdown): the mission, and one section per flow. */
+  readme?: string
+  /** Per-flow docs by flow key, for the flows whose manifest entry names a `doc`. */
+  flowDocs?: Record<string, string>
+}
+
+/** The files of a package as the browser reads them from a local folder
+ *  (or as the backend fetched them from a URL): path → text. */
+export type OperationBundle = {
+  manifest: OperationManifest
+  /** Every other file, keyed by the path the manifest uses (flows/x.flow.json, README.md). */
+  files: Record<string, string>
+}
+
+/** POST /api/operations/import — either a URL to resolve, or a bundle the
+ *  browser already read. `dryRun` returns the preview without installing. */
+export interface OperationImportInput {
+  url?: string
+  /** Optional folder inside a catalog repo when `url` is the repository. */
+  path?: string
+  bundle?: OperationBundle
+  source?: OperationSource
+  params?: Record<string, unknown>
+  dryRun?: boolean
+}
+
+/** What a dry-run import answers: the manifest plus the readiness the panel
+ *  would show, before anything is written. */
+export interface OperationPreview {
+  manifest: OperationManifest
+  readiness: OperationReadiness
+  /** Set when an operation with the same key is already installed. */
+  existing?: Pick<Operation, 'id' | 'version'>
+  readme?: string
+  source: OperationSource
+}
+
+/** POST /api/operations/:id/run — start an `entry` flow of the operation. */
+export interface OperationRunInput {
+  flowKey: string
+  /** Extra input merged over the stored params into $.input. */
+  input?: unknown
+}

@@ -23,6 +23,13 @@ const dashboardNav = [
   { name: 'datasets', label: 'Datasets', icon: 'database' },
 ]
 
+// Operations: packaged flows that originate pipeline data — installed
+// packages, and the import wizard.
+const operationsNav = [
+  { name: 'operations', label: 'Installed', icon: 'box', to: { name: 'operations' } },
+  { name: 'operations-import', label: 'Import', icon: 'download', to: { name: 'operations', query: { import: '1' } } },
+]
+
 // Nodes (osctrl): enrolled systems and how to enroll new ones.
 const nodesNav = [
   { name: 'nodes', label: 'Enrolled Nodes', icon: 'monitor' },
@@ -126,6 +133,21 @@ onMounted(() => {
             {{ item.label }}
           </RouterLink>
 
+          <!-- Operations -->
+          <p class="mt-4 px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
+            Operations
+          </p>
+          <RouterLink
+            v-for="item in operationsNav"
+            :key="item.name"
+            :to="item.to"
+            class="nav-item"
+            :class="item.name === 'operations' && $route.name?.toString().startsWith('operation') && !$route.query.import ? 'is-active' : ''"
+          >
+            <Icon :name="item.icon" :size="16" />
+            {{ item.label }}
+          </RouterLink>
+
           <!-- Nodes -->
           <p class="mt-4 px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
             Nodes
@@ -156,6 +178,10 @@ onMounted(() => {
           <RouterLink :to="{ name: 'issues' }" class="nav-item" active-class="is-active">
             <Icon name="flag" :size="16" />
             Issues
+          </RouterLink>
+          <RouterLink :to="{ name: 'activities' }" class="nav-item" active-class="is-active">
+            <Icon name="activity" :size="16" />
+            Activities
           </RouterLink>
 
           <!-- Saved issue sub-views (tag filters) -->
