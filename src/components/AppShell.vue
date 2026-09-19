@@ -141,13 +141,17 @@ onMounted(() => {
             {{ item.label }}
           </RouterLink>
 
-          <!-- Pipeline: Stage → Issues -->
+          <!-- Pipeline: Stage → Findings → Issues (every level optional) -->
           <p class="mt-4 px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
-            Issues
+            Pipeline
           </p>
           <RouterLink :to="{ name: 'stage' }" class="nav-item" active-class="is-active">
             <Icon name="inbox" :size="16" />
             Stage
+          </RouterLink>
+          <RouterLink :to="{ name: 'findings' }" class="nav-item" active-class="is-active">
+            <Icon name="target" :size="16" />
+            Findings
           </RouterLink>
           <RouterLink :to="{ name: 'issues' }" class="nav-item" active-class="is-active">
             <Icon name="flag" :size="16" />

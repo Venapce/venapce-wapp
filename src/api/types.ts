@@ -523,30 +523,67 @@ export interface OsctrlEnrollValues {
   [k: string]: unknown
 }
 
-// ---- Issues (the Venapce axis table) ----
-// `issues` is Venapce's single main table. Rather than a table per issue type,
-// every row carries `tags`, and a saved sub-view is just a tag filter. Rows are
-// produced and advanced by FloMorphic workflows (the auxiliary logic system);
-// this front reads, filters, and displays them.
+// ---- Pipeline: Stage → Findings → Issues ----
+// Three tables that evaluate data at three levels. The pipeline between them
+// is fully OPTIONAL: a FloMorphic flow (the expert user's own rules) decides
+// where a row lands. Raw data usually arrives on `stage`; a later process may
+// turn a staged row into a `finding` when it shows some aspect worth tracking;
+// a finding that needs validating / fixing / a mission becomes an `issue`. But
+// a flow may just as well write straight to findings or issues — nothing forces
+// the order. The tables are here to see and evaluate data, not to enforce a
+// sequence. They share one vocabulary so every row is self-describing:
+//
+//   source   where the underlying DATA came from (connector / node / feed)
+//   origin   which PROCESS produced this row (flow, query, api, manual …)
+//   ref      structured provenance — how the row was made (flow id, run, rule,
+//            upstream ids …). Any shape.
+//   data     the payload / evidence itself. Any shape.
+//   meta     enrichment / context attached by later processes. Any shape.
+//   *Id      typed links between the tables (0 / absent = not linked)
+//
+// `data`, `meta` and `ref` are free-form JSON precisely because every producer
+// has its own model; the UI renders them as an explorable tree (JsonTree).
 
-export type IssueSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
+/** A free-form JSON document column. Any shape — object, array or scalar. */
+export type JsonDoc = unknown
 
-export interface Issue {
+/** Fields every pipeline row shares. */
+export interface PipelineRow {
   id: number | string
   title: string
   summary?: string
+  /** The polymorphic axis: tag sets both classify a row and build sub-views. */
+  tags: string[]
+  /** Where the underlying data came from (connector / node / feed). */
+  source?: string
+  /** Which process produced this row (a flow, a query, the API, a person). */
+  origin?: string
+  /** Structured provenance — how the row was made. */
+  ref?: JsonDoc
+  /** The payload / evidence. */
+  data?: JsonDoc
+  /** Enrichment / context attached by later processes. */
+  meta?: JsonDoc
+  updatedAt?: string
+}
+
+export type IssueSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
+
+// ---- Issues (the Venapce axis table) ----
+// `issues` is Venapce's single main table. Rather than a table per issue type,
+// every row carries `tags`, and a saved sub-view is just a tag filter. Rows are
+// produced and advanced by FloMorphic workflows (the auxiliary logic system) —
+// directly, or by promoting a finding / staged row.
+
+export interface Issue extends PipelineRow {
   /** Lifecycle state, driven by FloMorphic (e.g. open, proceed, resolved). */
   status: string
   severity?: IssueSeverity
-  /** The polymorphic axis: tag sets both classify a row and build sub-views. */
-  tags: string[]
-  /** Originating system / node / workflow. */
-  source?: string
   assignee?: string
+  /** The finding / staged row this issue was promoted from, when it was. */
+  findingId?: number | string | null
+  stageId?: number | string | null
   createdAt?: string
-  updatedAt?: string
-  /** Free-form payload the workflow attached. */
-  data?: Record<string, unknown>
 }
 
 /** Filter passed to GET /api/issues. */
@@ -554,8 +591,23 @@ export interface IssueQuery {
   tags?: string[]
   match?: 'any' | 'all'
   status?: string
+  severity?: string
   search?: string
 }
+
+/** GET /api/issues/:id — the issue with its pipeline neighbours. */
+export interface IssueDetail {
+  item: Issue
+  /** Findings that point at this issue. */
+  findings: Finding[]
+  /** The staged row the chain started from, if any. */
+  stage: StageItem | null
+}
+
+/** Editable subset sent on PUT /api/issues/:id (partial — absent = keep). */
+export type IssueInput = Partial<
+  Pick<Issue, 'title' | 'summary' | 'status' | 'severity' | 'tags' | 'source' | 'origin' | 'assignee' | 'ref' | 'data' | 'meta'>
+> & { findingId?: number; stageId?: number }
 
 /** A user-defined saved sub-view under the Issues menu: a named tag filter. */
 export interface IssueView {
@@ -565,30 +617,72 @@ export interface IssueView {
   match: 'any' | 'all'
 }
 
-// ---- Stage (the pipeline inbox that precedes Issues) ----
-// Everything a pipeline feeds into FloMorphic lands on `stage` first — raw,
-// un-triaged. A FloMorphic flow inspects each row and, if it meets the flow's
-// criteria, promotes it into `issues` (attaching the issue's tags); otherwise it
-// is dropped or held. Stage is therefore the waiting room ahead of the axis table.
+// ---- Findings (the middle level) ----
+// What a process concluded from data: an observation with a severity, a
+// confidence and a target, still to be validated. Every finding carries where
+// it came from (source), which process made it (origin) and how (ref).
+
+export type FindingStatus = 'new' | 'triaged' | 'confirmed' | 'false_positive' | 'promoted' | 'dismissed' | string
+
+export interface Finding extends PipelineRow {
+  status: FindingStatus
+  severity?: IssueSeverity
+  /** How sure the producer is (low / medium / high — free text). */
+  confidence?: string
+  /** Finding class: anomaly, vulnerability, misconfiguration, malware, policy … */
+  category?: string
+  /** The affected asset: node hostname / uuid, identity, service … */
+  target?: string
+  /** Producer-chosen dedup key (e.g. rule + target) so repeats are recognisable. */
+  fingerprint?: string
+  /** Staged row it was made from / issue it became. */
+  stageId?: number | string | null
+  issueId?: number | string | null
+  createdAt?: string
+}
+
+/** Filter passed to GET /api/findings. */
+export interface FindingQuery {
+  tags?: string[]
+  match?: 'any' | 'all'
+  status?: string
+  severity?: string
+  category?: string
+  source?: string
+  target?: string
+  search?: string
+}
+
+/** GET /api/findings/:id — the finding with its pipeline neighbours. */
+export interface FindingDetail {
+  item: Finding
+  stage: StageItem | null
+  issue: Issue | null
+}
+
+/** Editable subset sent on PUT /api/findings/:id (partial — absent = keep). */
+export type FindingInput = Partial<
+  Pick<
+    Finding,
+    | 'title' | 'summary' | 'status' | 'severity' | 'confidence' | 'category' | 'tags'
+    | 'source' | 'origin' | 'target' | 'fingerprint' | 'ref' | 'data' | 'meta'
+  >
+> & { stageId?: number; issueId?: number }
+
+// ---- Stage (the pipeline inbox) ----
+// Raw, un-triaged rows. A FloMorphic flow inspects each row and routes it via
+// `disposition`; a promoted row records what it became in findingId / issueId.
 
 /** Where a FloMorphic flow routed a staged row. */
 export type StageDisposition = 'pending' | 'promoted' | 'dropped' | 'held' | string
 
-export interface StageItem {
-  id: number | string
-  title?: string
-  summary?: string
-  /** Pipeline / connector the data arrived from. */
-  source?: string
+export interface StageItem extends PipelineRow {
   /** The flow's routing decision for this row. */
   disposition: StageDisposition
-  /** Issue this row became, once promoted (null while pending). */
+  /** What this row became once promoted (absent while pending). */
+  findingId?: number | string | null
   issueId?: number | string | null
-  tags?: string[]
-  /** Raw incoming payload the pipeline delivered. */
-  data?: Record<string, unknown>
   receivedAt?: string
-  updatedAt?: string
 }
 
 /** Filter passed to GET /api/stage. */
@@ -596,4 +690,20 @@ export interface StageQuery {
   disposition?: StageDisposition
   source?: string
   search?: string
+}
+
+/** GET /api/stage/:id — the staged row with the findings made from it. */
+export interface StageDetail {
+  item: StageItem
+  findings: Finding[]
+}
+
+/** Editable subset sent on PUT /api/stage/:id (partial — absent = keep). */
+export type StageInput = Partial<
+  Pick<StageItem, 'title' | 'summary' | 'source' | 'origin' | 'disposition' | 'tags' | 'ref' | 'data' | 'meta'>
+> & { findingId?: number; issueId?: number }
+
+/** Overrides accepted when promoting a row to the next level. */
+export interface PromoteInput extends FindingInput {
+  assignee?: string
 }

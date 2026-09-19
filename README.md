@@ -38,12 +38,37 @@ Senses (osquery agents, plugins)  →  FloMorphic workflows  →  Venapce backen
 | **Chart Builder** | Pick a dataset → per-chart controls → builds a `query_context`, renders with ECharts. Five common types sit inline; **View all charts** opens the full Superset catalogue (74 types, deprecated ones flagged). **Save** persists the chart for dashboards to use. |
 | **Datasets** | Browse the instance's databases and datasets, via the backend proxy. |
 | **Nodes** | The fleet — enrolled osquery systems (Linux/macOS/Windows) from **osctrl**, with online status and search, plus **Enroll** commands for new nodes. |
-| **Stage** | The pipeline inbox: raw, un-triaged rows every pipeline feeds in. A FloMorphic flow routes each (`pending` / `promoted` / `held` / `dropped`). |
-| **Issues** | The single issues table — enriched, promoted signal. Every row carries **tags**; a saved sub-view is just a named tag filter. FloMorphic produces and advances the rows. |
+| **Stage** | The pipeline inbox: raw, un-triaged rows every pipeline feeds in. A FloMorphic flow routes each (`pending` / `promoted` / `held` / `dropped`) — to a finding, straight to an issue, or nowhere. |
+| **Findings** | What a process concluded from data: an observation with a severity, confidence, category and target, still to be validated. Every finding carries its provenance. Validated findings are promoted to issues. |
+| **Issues** | The single issues table — what needs validating, fixing or acting on. Every row carries **tags**; a saved sub-view is just a named tag filter. FloMorphic produces and advances the rows. |
 | **Settings** | Configure the Superset and osctrl connections (stored & encrypted server-side, login probed) and optionally load Superset's demo datasets. |
 
-> The Nodes and Stage/Issues views fall back to a built-in **sample data** set (with a
+> The Nodes and pipeline views fall back to a built-in **sample data** set (with a
 > banner) when the backend isn't reachable, so the UI stays reviewable during development.
+
+### The pipeline tables
+
+Stage → Findings → Issues is an **optional** pipeline, not a mandatory sequence. A
+FloMorphic flow (the expert user's own rules) decides where a row lands: raw data usually
+arrives on `stage`; a later process may turn it into a `finding` when it shows some
+aspect worth tracking; a finding that needs validating / fixing / a mission becomes an
+`issue` — but a flow may just as well write straight to findings or issues. The tables
+are there to see and evaluate data at three levels, and they share one vocabulary so
+every row is self-describing:
+
+| Column | Meaning |
+|--------|---------|
+| `source` | Where the underlying **data** came from (connector / node / feed). |
+| `origin` | Which **process** produced this row (flow, query, api, manual …). |
+| `ref` | Structured provenance — *how* the row was made (flow id, run, rule, upstream ids). Any JSON shape. |
+| `data` | The payload / evidence itself. Any JSON shape. |
+| `meta` | Enrichment / context attached by later processes. Any JSON shape. |
+| `tags` | The polymorphic axis: classify a row and build sub-views. |
+| `stageId` / `findingId` / `issueId` | Typed links between the levels (promotion sets them both ways). |
+
+Every row opens a **detail page** (`/stage/:id`, `/findings/:id`, `/issues/:id`) that
+shows its place in the chain, its fields, and the three JSON documents as a
+Compass-style explorable tree (`components/json/`) — with edit, delete and promote.
 
 ## Run
 
@@ -94,7 +119,8 @@ the rest are listed but not selectable, so the gap is visible rather than hidden
 The raw query result is kept in the builder, so display-only controls (formats, bin count,
 tree layout, colours) re-render instantly — only query changes need a re-run.
 
-- [src/api/venapce.ts](src/api/venapce.ts) — the whole backend API surface (Superset proxy, charts, dashboards, nodes, stage, issues).
+- [src/api/venapce.ts](src/api/venapce.ts) — the whole backend API surface (Superset proxy, charts, dashboards, nodes, stage, findings, issues).
+- [src/lib/pipeline.ts](src/lib/pipeline.ts) — the pipeline tables' shared vocabulary (lifecycle values, badge colours, field specs) used by the list + detail pages.
 - [src/lib/builder.ts](src/lib/builder.ts) — builder state, per-family `query_context` building, viz engines.
 - [src/lib/vizCatalog.ts](src/lib/vizCatalog.ts) — the chart-type catalogue behind the picker.
 - [src/lib/viz/](src/lib/viz/) — one row→`option` transform per chart family (`theme.ts` paints them light/dark).

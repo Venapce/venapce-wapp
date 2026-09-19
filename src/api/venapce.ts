@@ -14,7 +14,13 @@ import type {
   FlomorphicCheckResult,
   FlomorphicConnectResult,
   FlomorphicSettingsView,
+  Finding,
+  FindingDetail,
+  FindingInput,
+  FindingQuery,
   Issue,
+  IssueDetail,
+  IssueInput,
   IssueQuery,
   OsctrlEnrollValues,
   OsctrlEnvironment,
@@ -25,6 +31,9 @@ import type {
   OsctrlSettingsView,
   OsspaceResult,
   QueryContext,
+  PromoteInput,
+  StageDetail,
+  StageInput,
   StageItem,
   StageQuery,
   SupersetDatabase,
@@ -320,12 +329,18 @@ export class VenapceClient {
     return data
   }
 
+  // ---- Pipeline: Stage → Findings → Issues ----
+  // Three tables, one vocabulary (see types.ts). Every level has list / get /
+  // create / update (partial) / delete, and a promote that makes the next-level
+  // row and links both ways.
+
   // ---- Issues (the axis table) ----
   async listIssues(q: IssueQuery = {}): Promise<Issue[]> {
     const params: Record<string, string> = {}
     if (q.tags?.length) params.tags = q.tags.join(',')
     if (q.match) params.match = q.match
     if (q.status) params.status = q.status
+    if (q.severity) params.severity = q.severity
     if (q.search) params.search = q.search
     const { data } = await this.http.get('/api/issues', { params })
     return data
@@ -335,14 +350,92 @@ export class VenapceClient {
     const { data } = await this.http.get('/api/issues/tags')
     return data
   }
+  async getIssue(id: number | string): Promise<IssueDetail> {
+    const { data } = await this.http.get(`/api/issues/${id}`)
+    return data
+  }
+  async createIssue(input: IssueInput & { title: string }): Promise<Issue> {
+    const { data } = await this.http.post('/api/issues', input)
+    return data
+  }
+  async updateIssue(id: number | string, input: IssueInput): Promise<Issue> {
+    const { data } = await this.http.put(`/api/issues/${id}`, input)
+    return data
+  }
+  async deleteIssue(id: number | string): Promise<void> {
+    await this.http.delete(`/api/issues/${id}`)
+  }
 
-  // ---- Stage (the pipeline inbox ahead of Issues) ----
+  // ---- Findings (the middle level) ----
+  async listFindings(q: FindingQuery = {}): Promise<Finding[]> {
+    const params: Record<string, string> = {}
+    if (q.tags?.length) params.tags = q.tags.join(',')
+    if (q.match) params.match = q.match
+    if (q.status) params.status = q.status
+    if (q.severity) params.severity = q.severity
+    if (q.category) params.category = q.category
+    if (q.source) params.source = q.source
+    if (q.target) params.target = q.target
+    if (q.search) params.search = q.search
+    const { data } = await this.http.get('/api/findings', { params })
+    return data
+  }
+  async findingTags(): Promise<string[]> {
+    const { data } = await this.http.get('/api/findings/tags')
+    return data
+  }
+  async getFinding(id: number | string): Promise<FindingDetail> {
+    const { data } = await this.http.get(`/api/findings/${id}`)
+    return data
+  }
+  async createFinding(input: FindingInput & { title: string }): Promise<Finding> {
+    const { data } = await this.http.post('/api/findings', input)
+    return data
+  }
+  async updateFinding(id: number | string, input: FindingInput): Promise<Finding> {
+    const { data } = await this.http.put(`/api/findings/${id}`, input)
+    return data
+  }
+  async deleteFinding(id: number | string): Promise<void> {
+    await this.http.delete(`/api/findings/${id}`)
+  }
+  /** The finding was validated: open an issue from it (overrides optional). */
+  async promoteFinding(id: number | string, input: PromoteInput = {}): Promise<{ finding: Finding; issue: Issue }> {
+    const { data } = await this.http.post(`/api/findings/${id}/promote`, input)
+    return data
+  }
+
+  // ---- Stage (the pipeline inbox) ----
   async listStage(q: StageQuery = {}): Promise<StageItem[]> {
     const params: Record<string, string> = {}
     if (q.disposition) params.disposition = q.disposition
     if (q.source) params.source = q.source
     if (q.search) params.search = q.search
     const { data } = await this.http.get('/api/stage', { params })
+    return data
+  }
+  async getStage(id: number | string): Promise<StageDetail> {
+    const { data } = await this.http.get(`/api/stage/${id}`)
+    return data
+  }
+  async updateStage(id: number | string, input: StageInput): Promise<StageItem> {
+    const { data } = await this.http.put(`/api/stage/${id}`, input)
+    return data
+  }
+  async deleteStage(id: number | string): Promise<void> {
+    await this.http.delete(`/api/stage/${id}`)
+  }
+  /**
+   * Promote a staged row to the next level: `finding` (the usual next step) or
+   * straight to `issue`. Returns the staged row (now `promoted`, linked) and
+   * the row it became.
+   */
+  async promoteStage(
+    id: number | string,
+    to: 'finding' | 'issue',
+    input: PromoteInput = {},
+  ): Promise<{ stage: StageItem; finding?: Finding; issue?: Issue }> {
+    const { data } = await this.http.post(`/api/stage/${id}/promote`, { ...input, to }, { params: { to } })
     return data
   }
 }

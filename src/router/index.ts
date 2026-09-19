@@ -28,9 +28,19 @@ const routes: RouteRecordRaw[] = [
       { path: 'nodes', name: 'nodes', component: () => import('@/views/NodesView.vue') },
       { path: 'nodes/enroll', name: 'nodes-enroll', component: () => import('@/views/EnrollView.vue') },
 
-      // Stage → Issues pipeline.
+      // Stage → Findings → Issues pipeline. Every level has a list and a
+      // per-row detail page (documents as a tree, edit / delete / promote).
       { path: 'stage', name: 'stage', component: () => import('@/views/StageView.vue') },
+      { path: 'stage/:id(\\d+)', name: 'stage-detail', component: () => import('@/views/StageDetailView.vue'), props: true },
+      { path: 'findings', name: 'findings', component: () => import('@/views/FindingsView.vue') },
+      {
+        path: 'findings/:id(\\d+)',
+        name: 'finding-detail',
+        component: () => import('@/views/FindingDetailView.vue'),
+        props: true,
+      },
       { path: 'issues', name: 'issues', component: () => import('@/views/IssuesView.vue') },
+      { path: 'issues/:id(\\d+)', name: 'issue-detail', component: () => import('@/views/IssueDetailView.vue'), props: true },
       {
         path: 'issues/view/:viewId',
         name: 'issues-view',
