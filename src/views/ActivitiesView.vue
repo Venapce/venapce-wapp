@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import { useConnectionStore } from '@/stores/connection'
 import { apiErr } from '@/api/venapce'
 import { relativeTime } from '@/lib/format'
-import { sampleActivities } from '@/lib/samples'
 import { ACTIVITY_KINDS, ACTIVITY_STATUSES, SUBJECT_ICON, activityOpen, humanize, rowRoute } from '@/lib/pipeline'
 import Pagination from '@/components/Pagination.vue'
 import Icon from '@/components/Icon.vue'
@@ -23,7 +22,6 @@ const router = useRouter()
 const items = ref<Activity[]>([])
 const loading = ref(true)
 const error = ref('')
-const sample = ref(false)
 const search = ref('')
 const kind = ref('')
 const status = ref('')
@@ -78,12 +76,8 @@ async function load(quiet = false) {
   error.value = ''
   try {
     items.value = await conn.client.listActivities({ limit: 1000 })
-    sample.value = false
-  } catch {
-    if (!quiet) {
-      items.value = sampleActivities
-      sample.value = true
-    }
+  } catch (e) {
+    if (!quiet) error.value = apiErr(e)
   } finally {
     loading.value = false
   }
@@ -135,9 +129,6 @@ onMounted(() => load())
       every edit and promotion. Open a row in Stage, Findings or Issues and press <em>Run flow</em> to add one.
     </p>
 
-    <div v-if="sample" class="mb-4 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning">
-      Showing sample data — the backend <code>/api/activities</code> endpoint isn't reachable.
-    </div>
     <p v-if="error" class="mb-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ error }}</p>
 
     <!-- kind / status / tag filters -->
@@ -234,7 +225,7 @@ onMounted(() => load())
               {{ relativeTime(a.finishedAt || a.createdAt) }}
             </td>
             <td class="px-2 py-2">
-              <button class="icon-btn-plain icon-btn--danger" title="Delete activity" :disabled="sample" @click.stop="remove(a)">
+              <button class="icon-btn-plain icon-btn--danger" title="Delete activity" @click.stop="remove(a)">
                 <Icon name="trash" :size="13" />
               </button>
             </td>

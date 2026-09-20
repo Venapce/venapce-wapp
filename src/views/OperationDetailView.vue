@@ -7,7 +7,6 @@ import { apiErr } from '@/api/venapce'
 import { relativeTime } from '@/lib/format'
 import { readValue, writeValue } from '@/lib/localStore'
 import { renderMarkdown } from '@/lib/markdown'
-import { sampleOperationDetails } from '@/lib/samples'
 import { ROLE_CLASS, ROLE_ICON, ROLE_LABEL, SCALE_LABEL, describeCron, effectiveParams, flowsByStep, substituteParams } from '@/lib/operations'
 import Icon from '@/components/Icon.vue'
 import Badge from '@/components/pipeline/Badge.vue'
@@ -31,7 +30,6 @@ const router = useRouter()
 const op = ref<OperationDetail | null>(null)
 const loading = ref(true)
 const error = ref('')
-const sample = ref(false)
 const notice = ref('')
 const busy = ref('') // the flow key (or action) in flight
 const params = ref<Record<string, unknown>>({})
@@ -68,15 +66,8 @@ async function load(quiet = false) {
   error.value = ''
   try {
     apply(await conn.client.getOperation(props.id))
-    sample.value = false
   } catch (e) {
-    const s = sampleOperationDetails[props.id]
-    if (s && !quiet) {
-      apply(s)
-      sample.value = true
-    } else if (!quiet) {
-      error.value = apiErr(e)
-    }
+    if (!quiet) error.value = apiErr(e)
   } finally {
     loading.value = false
   }
@@ -94,10 +85,6 @@ function flash(msg: string) {
 
 /** Every action goes through here: run it, apply the returned detail, show what went wrong. */
 async function act(key: string, fn: () => Promise<OperationDetail | void>, done?: string) {
-  if (sample.value) {
-    error.value = 'Sample data — connect the backend to act on an operation.'
-    return
-  }
   busy.value = key
   error.value = ''
   try {
@@ -123,10 +110,6 @@ const pullFlow = (f: OperationFlowState) =>
 
 /** Download the installed package as a zip (one folder, the catalog layout). */
 function exportZip() {
-  if (sample.value) {
-    error.value = 'Sample data — connect the backend to export an operation.'
-    return
-  }
   window.open(conn.client.operationPackageUrl(props.id), '_blank', 'noopener')
 }
 
@@ -251,9 +234,6 @@ onMounted(() => {
         </a>
       </div>
 
-      <div v-if="sample" class="mb-4 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning">
-        Showing sample data — the backend <code>/api/operations</code> endpoint isn't reachable.
-      </div>
       <p v-if="error" class="mb-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ error }}</p>
       <p v-if="notice" class="mb-4 rounded-md bg-success-soft px-3 py-2 text-sm text-success">{{ notice }}</p>
 

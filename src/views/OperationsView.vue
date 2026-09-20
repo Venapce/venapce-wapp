@@ -4,8 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useConnectionStore } from '@/stores/connection'
 import { useOsctrlStore } from '@/stores/osctrl'
 import { useFlomorphicStore } from '@/stores/flomorphic'
+import { apiErr } from '@/api/venapce'
 import { relativeTime } from '@/lib/format'
-import { sampleOperations } from '@/lib/samples'
 import { SCALE_LABEL, operationRoute } from '@/lib/operations'
 import Icon from '@/components/Icon.vue'
 import Badge from '@/components/pipeline/Badge.vue'
@@ -27,7 +27,6 @@ const router = useRouter()
 const items = ref<Operation[]>([])
 const loading = ref(true)
 const error = ref('')
-const sample = ref(false)
 const search = ref('')
 const scale = ref<OperationScale | ''>('')
 const tag = ref('')
@@ -61,10 +60,9 @@ async function load() {
   error.value = ''
   try {
     items.value = await conn.client.listOperations()
-    sample.value = false
-  } catch {
-    items.value = sampleOperations
-    sample.value = true
+  } catch (e) {
+    items.value = []
+    error.value = apiErr(e)
   } finally {
     loading.value = false
   }
@@ -130,9 +128,6 @@ onMounted(() => {
       the parameters that adapt it to your organization. Install one, set its parameters, push its flows into FloMorphic, and run.
     </p>
 
-    <div v-if="sample" class="mb-4 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning">
-      Showing sample data — the backend <code>/api/operations</code> endpoint isn't reachable.
-    </div>
     <p v-if="error" class="mb-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ error }}</p>
 
     <!-- scale / tag filters -->

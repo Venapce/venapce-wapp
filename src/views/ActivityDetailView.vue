@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import { useConnectionStore } from '@/stores/connection'
 import { apiErr } from '@/api/venapce'
 import { relativeTime } from '@/lib/format'
-import { sampleActivities, sampleFindings, sampleIssues, sampleStage } from '@/lib/samples'
 import { ACTIVITY_KINDS, ACTIVITY_STATUSES, JSON_DOCS, SUBJECT_ICON, activityOpen, humanize, rowRoute, type FieldSpec } from '@/lib/pipeline'
 import Icon from '@/components/Icon.vue'
 import Badge from '@/components/pipeline/Badge.vue'
@@ -27,7 +26,6 @@ const router = useRouter()
 const detail = ref<ActivityDetail | null>(null)
 const loading = ref(true)
 const error = ref('')
-const sample = ref(false)
 const editing = ref(false)
 const saving = ref(false)
 const saveError = ref('')
@@ -81,18 +79,9 @@ async function load(quiet = false) {
   error.value = ''
   try {
     detail.value = await conn.client.getActivity(props.id)
-    sample.value = false
   } catch (e) {
-    const s = sampleActivities.find((a) => String(a.id) === props.id)
-    if (s) {
-      const pool = s.subjectKind === 'stage' ? sampleStage : s.subjectKind === 'finding' ? sampleFindings : sampleIssues
-      const found = pool.find((x) => String(x.id) === String(s.subjectId))
-      detail.value = { item: s, subject: found ? (found as unknown as Record<string, unknown>) : null }
-      sample.value = true
-    } else {
-      detail.value = null
-      error.value = apiErr(e)
-    }
+    detail.value = null
+    error.value = apiErr(e)
   } finally {
     loading.value = false
   }
@@ -169,28 +158,25 @@ onMounted(() => load())
       <span class="text-fg-subtle">/</span>
       <span class="font-mono">#{{ row?.id ?? '…' }}</span>
       <div class="ml-auto flex items-center gap-2">
-        <button v-if="isRun && inFlight" class="btn-danger btn-sm" :disabled="sample || !!busy" title="Stop the run on FloMorphic" @click="act('stop')">
+        <button v-if="isRun && inFlight" class="btn-danger btn-sm" :disabled="!!busy" title="Stop the run on FloMorphic" @click="act('stop')">
           <Icon name="stop" :size="13" /> {{ busy === 'stop' ? 'Stopping…' : 'Stop' }}
         </button>
-        <button v-if="isRun" class="btn-outline btn-sm" :disabled="sample || !!busy" title="Pull the run's state from FloMorphic now" @click="act('sync')">
+        <button v-if="isRun" class="btn-outline btn-sm" :disabled="!!busy" title="Pull the run's state from FloMorphic now" @click="act('sync')">
           <Icon name="refresh" :size="13" /> {{ busy === 'sync' ? 'Syncing…' : 'Sync' }}
         </button>
-        <button v-if="row" class="btn-primary btn-sm" :disabled="sample || editing" title="Run a flow on the same row" @click="dialog = true">
+        <button v-if="row" class="btn-primary btn-sm" :disabled="editing" title="Run a flow on the same row" @click="dialog = true">
           <Icon name="play" :size="13" /> Run flow
         </button>
-        <button v-if="!editing" class="btn-outline btn-sm" :disabled="!row || sample" title="Correct or complete the outcome" @click="editing = true">
+        <button v-if="!editing" class="btn-outline btn-sm" :disabled="!row" title="Correct or complete the outcome" @click="editing = true">
           <Icon name="pencil" :size="13" /> Edit
         </button>
-        <button class="btn-danger btn-sm" :disabled="!row || sample" title="Delete this activity" @click="remove">
+        <button class="btn-danger btn-sm" :disabled="!row" title="Delete this activity" @click="remove">
           <Icon name="trash" :size="13" /> Delete
         </button>
         <button class="icon-btn-sm" title="Reload" @click="load()"><Icon name="refresh" :size="14" /></button>
       </div>
     </div>
 
-    <div v-if="sample" class="mb-4 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning">
-      Showing a built-in sample activity — the backend has no activity with this id (or isn't reachable), so actions are disabled.
-    </div>
     <p v-if="error" class="mb-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ error }}</p>
     <p v-if="loading && !row" class="text-sm text-fg-subtle">Loading…</p>
 
