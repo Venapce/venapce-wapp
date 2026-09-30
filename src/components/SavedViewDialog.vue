@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { IssueView } from '@/api/types'
+import { VIEW_TABLES } from '@/lib/savedView'
+import Icon from '@/components/Icon.vue'
+import type { SavedView, SavedViewTable } from '@/api/types'
 
-// Modal for defining a saved Issues sub-view: a name plus a tag filter. This is
-// how a user "adds a submenu under Issues" — no new table, just tags.
-const props = defineProps<{ open: boolean; editing?: IssueView | null }>()
+// Modal for defining a saved view: which table, a name, and a tag filter. This
+// is how a user "adds a submenu" — no new table, just tags over an existing
+// one (Stage, Findings, Issues or Activities).
+const props = defineProps<{ open: boolean; editing?: SavedView | null; defaultTable?: SavedViewTable }>()
 const emit = defineEmits<{
-  (e: 'save', payload: { name: string; tags: string[]; match: 'any' | 'all' }): void
+  (e: 'save', payload: { name: string; table: SavedViewTable; tags: string[]; match: 'any' | 'all' }): void
   (e: 'close'): void
 }>()
 
 const name = ref('')
+const table = ref<SavedViewTable>('issues')
 const tagsInput = ref('')
 const match = ref<'any' | 'all'>('any')
 
@@ -29,6 +33,7 @@ watch(
   (open) => {
     if (!open) return
     name.value = props.editing?.name ?? ''
+    table.value = props.editing?.table ?? props.defaultTable ?? 'issues'
     tagsInput.value = props.editing?.tags.join(', ') ?? ''
     match.value = props.editing?.match ?? 'any'
   },
@@ -36,19 +41,38 @@ watch(
 
 function save() {
   if (!canSave.value) return
-  emit('save', { name: name.value.trim(), tags: tags.value, match: match.value })
+  emit('save', { name: name.value.trim(), table: table.value, tags: tags.value, match: match.value })
 }
 </script>
 
 <template>
   <div v-if="open" class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" @click.self="emit('close')">
     <div class="card w-full max-w-md p-6" role="dialog" aria-modal="true">
-      <h2 class="mb-1 text-sm font-semibold text-fg">{{ editing ? 'Edit view' : 'New issue view' }}</h2>
+      <h2 class="mb-1 text-sm font-semibold text-fg">{{ editing ? 'Edit view' : 'New view' }}</h2>
       <p class="mb-4 text-xs text-fg-muted">
-        A view is a named tag filter. It appears as a sub-item under Issues and shows only matching rows.
+        A view is a named tag filter over one table. It appears under Views in the sidebar and shows only matching rows.
       </p>
 
       <div class="space-y-4">
+        <div>
+          <label class="label">Table</label>
+          <div class="grid grid-cols-2 gap-1.5">
+            <button
+              v-for="t in VIEW_TABLES"
+              :key="t.key"
+              class="flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors"
+              :class="
+                table === t.key
+                  ? 'border-accent-border bg-accent-soft text-accent'
+                  : 'border-line text-fg-muted hover:border-accent-border hover:text-fg'
+              "
+              @click="table = t.key"
+            >
+              <Icon :name="t.icon" :size="14" />
+              {{ t.label }}
+            </button>
+          </div>
+        </div>
         <div>
           <label class="label">Name</label>
           <input v-model="name" class="field" placeholder="e.g. Untrusted" @keyup.enter="save" />

@@ -36,6 +36,9 @@ import type {
   StageInput,
   StageItem,
   StageQuery,
+  SavedView,
+  SavedViewInput,
+  SavedViewTable,
   SupersetDatabase,
   SupersetSettingsView,
   Activity,
@@ -343,6 +346,25 @@ export class VenapceClient {
     return data
   }
 
+  // ---- Saved views ----
+  // A view is a named tag filter over one of the pipeline tables; the table's
+  // own list endpoint then does the filtering with the view's tags + match.
+  async listViews(table?: SavedViewTable): Promise<SavedView[]> {
+    const { data } = await this.http.get('/api/views', { params: table ? { table } : {} })
+    return data
+  }
+  async createView(input: SavedViewInput & { name: string; tags: string[] }): Promise<SavedView> {
+    const { data } = await this.http.post('/api/views', input)
+    return data
+  }
+  async updateView(id: number | string, input: SavedViewInput): Promise<SavedView> {
+    const { data } = await this.http.put(`/api/views/${id}`, input)
+    return data
+  }
+  async deleteView(id: number | string): Promise<void> {
+    await this.http.delete(`/api/views/${id}`)
+  }
+
   // ---- Pipeline: Stage → Findings → Issues ----
   // Three tables, one vocabulary (see types.ts). Every level has list / get /
   // create / update (partial) / delete, and a promote that makes the next-level
@@ -422,10 +444,16 @@ export class VenapceClient {
   // ---- Stage (the pipeline inbox) ----
   async listStage(q: StageQuery = {}): Promise<StageItem[]> {
     const params: Record<string, string> = {}
+    if (q.tags?.length) params.tags = q.tags.join(',')
+    if (q.match) params.match = q.match
     if (q.disposition) params.disposition = q.disposition
     if (q.source) params.source = q.source
     if (q.search) params.search = q.search
     const { data } = await this.http.get('/api/stage', { params })
+    return data
+  }
+  async stageTags(): Promise<string[]> {
+    const { data } = await this.http.get('/api/stage/tags')
     return data
   }
   async getStage(id: number | string): Promise<StageDetail> {

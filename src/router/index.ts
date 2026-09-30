@@ -22,7 +22,9 @@ const routes: RouteRecordRaw[] = [
         redirect: (to) => ({ name: 'dashboards', query: { d: String(to.params.id), edit: '1' } }),
       },
       { path: 'builder', name: 'builder', component: () => import('@/views/ChartBuilderView.vue') },
-      { path: 'datasets', name: 'datasets', component: () => import('@/views/DatasetsView.vue') },
+      // Datasets merged into the builder: its dataset list is where they are
+      // browsed and registered, so the old page just forwards there.
+      { path: 'datasets', redirect: { name: 'builder' } },
 
       // Nodes (osctrl): enrolled systems + enroll commands.
       { path: 'nodes', name: 'nodes', component: () => import('@/views/NodesView.vue') },
@@ -49,12 +51,15 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/ActivityDetailView.vue'),
         props: true,
       },
+      // Saved views: a named tag filter over any of the pipeline tables. The
+      // route renders whichever table the view names.
       {
-        path: 'issues/view/:viewId',
-        name: 'issues-view',
-        component: () => import('@/views/IssuesView.vue'),
+        path: 'views/:viewId',
+        name: 'saved-view',
+        component: () => import('@/views/SavedViewView.vue'),
         props: true,
       },
+      { path: 'issues/view/:viewId', redirect: (to) => ({ name: 'saved-view', params: { viewId: to.params.viewId } }) },
 
       // Operations: installed packages of flows that originate pipeline data.
       { path: 'operations', name: 'operations', component: () => import('@/views/OperationsView.vue') },
@@ -73,7 +78,7 @@ const routes: RouteRecordRaw[] = [
 
 // Routes that need a configured Superset connection — until it's set up, these
 // funnel to Settings. Nodes/Stage/Issues have their own data sources and don't.
-const SUPERSET_ROUTES = new Set(['dashboards', 'dashboard', 'dashboard-edit', 'builder', 'datasets'])
+const SUPERSET_ROUTES = new Set(['dashboards', 'dashboard', 'dashboard-edit', 'builder'])
 
 export const router = createRouter({
   history: createWebHistory(),

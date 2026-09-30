@@ -2,25 +2,26 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useConnectionStore } from '@/stores/connection'
-import { useIssueViewsStore } from '@/stores/issueViews'
+import { useSavedViewsStore } from '@/stores/savedViews'
 import { apiErr } from '@/api/venapce'
 import { relativeTime } from '@/lib/format'
 import { sampleIssues } from '@/lib/samples'
 import { hasLink, humanize, rowRoute } from '@/lib/pipeline'
+import { tagsMatch } from '@/lib/savedView'
 import Pagination from '@/components/Pagination.vue'
 import Icon from '@/components/Icon.vue'
 import Badge from '@/components/pipeline/Badge.vue'
 import TagChip from '@/components/pipeline/TagChip.vue'
 import type { Issue } from '@/api/types'
 
-// The Issues axis table. One table for every issue type; a saved sub-view (from
+// The Issues axis table. One table for every issue type; a saved view (from
 // the route :viewId) is just a named tag filter. Rows are produced and advanced
 // by FloMorphic — this view reads and filters them; a row opens its detail
 // page (documents, provenance, edit / delete).
 const props = defineProps<{ viewId?: string }>()
 
 const conn = useConnectionStore()
-const viewsStore = useIssueViewsStore()
+const viewsStore = useSavedViewsStore()
 const router = useRouter()
 
 const issues = ref<Issue[]>([])
@@ -54,11 +55,7 @@ const allTags = computed(() => {
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
   return issues.value.filter((i) => {
-    if (activeTags.value.length) {
-      const has = (t: string) => i.tags?.includes(t)
-      const ok = match.value === 'all' ? activeTags.value.every(has) : activeTags.value.some(has)
-      if (!ok) return false
-    }
+    if (!tagsMatch(i.tags, activeTags.value, match.value)) return false
     if (status.value && i.status !== status.value) return false
     if (q && ![i.title, i.summary, i.source, i.origin, i.status, i.assignee].some((f) => (f ?? '').toLowerCase().includes(q))) {
       return false
@@ -136,8 +133,9 @@ watch(
   },
 )
 
-onMounted(() => {
-  viewsStore.load()
+onMounted(async () => {
+  // Views come from the backend, so seed the filter only once they are in.
+  await viewsStore.load()
   applyView()
   load()
 })
@@ -255,7 +253,7 @@ onMounted(() => {
             </td>
             <td class="px-4 py-2">
               <div class="flex flex-wrap gap-1">
-                <TagChip v-for="t in i.tags" :key="t" :tag="t" clickable :active="activeTags.includes(t)" @click.stop="toggleTag(t)" />
+                <TagChip v-for="t in i.tags" :key="t" :tag="t" clickable :active="activeTags.includes(t)" @click="toggleTag(t)" />
                 <span v-if="!i.tags?.length" class="text-xs text-fg-subtle">—</span>
               </div>
             </td>

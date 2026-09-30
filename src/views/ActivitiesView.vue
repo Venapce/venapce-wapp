@@ -2,9 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useConnectionStore } from '@/stores/connection'
+import { useSavedViewsStore } from '@/stores/savedViews'
 import { apiErr } from '@/api/venapce'
 import { relativeTime } from '@/lib/format'
 import { ACTIVITY_KINDS, ACTIVITY_STATUSES, SUBJECT_ICON, activityOpen, humanize, rowRoute } from '@/lib/pipeline'
+import { tagsMatch } from '@/lib/savedView'
 import Pagination from '@/components/Pagination.vue'
 import Icon from '@/components/Icon.vue'
 import Badge from '@/components/pipeline/Badge.vue'
@@ -12,11 +14,18 @@ import FactPill from '@/components/pipeline/FactPill.vue'
 import TagChip from '@/components/pipeline/TagChip.vue'
 import type { Activity } from '@/api/types'
 
-// Activities — everything that happened to the pipeline rows, across all three
-// tables: every flow run with its outcome, every manual edit and promotion.
+// Activities — everything that happened, across the whole product: every
+// FloMorphic flow run with its outcome (a pipeline row's, an operation's
+// install or sweep), every manual edit and promotion. It spans all the tables,
+// which is why it sits with Operations rather than inside the pipeline.
 // Filter by kind / status / tag, search the outcomes; a row opens the activity,
 // the subject chip opens the row it is about.
+//
+// A saved view (:viewId) seeds the tag filter and renames the page.
+const props = defineProps<{ viewId?: string }>()
+
 const conn = useConnectionStore()
+const viewsStore = useSavedViewsStore()
 const router = useRouter()
 
 const items = ref<Activity[]>([])
@@ -25,7 +34,13 @@ const error = ref('')
 const search = ref('')
 const kind = ref('')
 const status = ref('')
-const tag = ref('')
+
+// Active tag filter — seeded from a saved view when one is open, otherwise
+// toggled interactively from the chips.
+const activeTags = ref<string[]>([])
+const match = ref<'any' | 'all'>('any')
+
+const savedView = computed(() => (props.viewId ? viewsStore.get(props.viewId) : undefined))
 
 const kindCounts = computed(() => {
   const c: Record<string, number> = {}
@@ -48,7 +63,7 @@ const filtered = computed(() => {
   return items.value.filter((a) => {
     if (kind.value && a.kind !== kind.value) return false
     if (status.value && a.status !== status.value) return false
-    if (tag.value && !a.tags?.includes(tag.value)) return false
+    if (!tagsMatch(a.tags, activeTags.value, match.value)) return false
     if (
       q &&
       ![a.title, a.description, a.remediation, a.flowTitle, a.origin, `${a.subjectKind} #${a.subjectId}`].some((f) =>
@@ -64,7 +79,7 @@ const PAGE_SIZE = 25
 const page = ref(1)
 const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / PAGE_SIZE)))
 const paged = computed(() => filtered.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE))
-watch([search, kind, status, tag], () => (page.value = 1))
+watch([search, kind, status, activeTags, match], () => (page.value = 1), { deep: true })
 watch(totalPages, (n) => {
   if (page.value > n) page.value = n
 })
@@ -75,7 +90,10 @@ async function load(quiet = false) {
   if (!quiet) loading.value = true
   error.value = ''
   try {
-    items.value = await conn.client.listActivities({ limit: 1000 })
+    items.value = await conn.client.listActivities({
+      limit: 1000,
+      ...(savedView.value ? { tags: savedView.value.tags, match: savedView.value.match } : {}),
+    })
   } catch (e) {
     if (!quiet) error.value = apiErr(e)
   } finally {
@@ -94,6 +112,24 @@ watch(anyOpen, (open) => {
 })
 onBeforeUnmount(() => timer && clearInterval(timer))
 
+function toggleTag(t: string) {
+  const i = activeTags.value.indexOf(t)
+  if (i >= 0) activeTags.value.splice(i, 1)
+  else activeTags.value.push(t)
+}
+
+// Seed (or clear) the tag filter from the saved view the route names.
+function applyView() {
+  const v = savedView.value
+  activeTags.value = v ? [...v.tags] : []
+  match.value = v?.match ?? 'any'
+}
+
+watch(() => props.viewId, () => {
+  applyView()
+  load()
+})
+
 function open(a: Activity) {
   router.push(rowRoute('activity', a.id))
 }
@@ -108,13 +144,18 @@ async function remove(a: Activity) {
   }
 }
 
-onMounted(() => load())
+onMounted(async () => {
+  // Views come from the backend, so seed the filter only once they are in.
+  await viewsStore.load()
+  applyView()
+  load()
+})
 </script>
 
 <template>
   <div class="p-6">
     <div class="mb-1 flex items-center gap-3">
-      <h1 class="text-lg font-semibold text-fg">Activities</h1>
+      <h1 class="text-lg font-semibold text-fg">{{ savedView ? savedView.name : 'Activities' }}</h1>
       <span class="chip">{{ filtered.length }}</span>
       <span v-if="anyOpen" class="inline-flex items-center gap-1 text-xs text-accent">
         <Icon name="loader" :size="12" class="animate-spin" /> runs in progress
@@ -125,8 +166,15 @@ onMounted(() => load())
       </div>
     </div>
     <p class="mb-4 text-sm text-fg-muted">
-      What happened to the pipeline rows: every FloMorphic flow run with the outcome it produced (facts, remediation, proof), and
-      every edit and promotion. Open a row in Stage, Findings or Issues and press <em>Run flow</em> to add one.
+      <template v-if="savedView">
+        Saved view — activities tagged
+        <span class="font-medium text-fg">{{ savedView.tags.join(savedView.match === 'all' ? ' + ' : ' / ') }}</span>.
+      </template>
+      <template v-else>
+        Everything that ran, across every table: each FloMorphic flow run with the outcome it produced (facts, remediation, proof),
+        and each edit and promotion — operation installs and sweeps included. Open a row in Stage, Findings or Issues and press
+        <em>Run flow</em> to add one.
+      </template>
     </p>
 
     <p v-if="error" class="mb-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ error }}</p>
@@ -165,7 +213,14 @@ onMounted(() => load())
       </div>
       <div v-if="tags.length" class="flex flex-wrap items-center gap-1.5">
         <Icon name="tag" :size="13" class="text-fg-subtle" />
-        <TagChip v-for="t in tags" :key="t" :tag="t" clickable :active="tag === t" @click="tag = tag === t ? '' : t" />
+        <TagChip v-for="t in tags" :key="t" :tag="t" clickable :active="activeTags.includes(t)" @click="toggleTag(t)" />
+        <label v-if="activeTags.length > 1" class="ml-1 flex items-center gap-1 text-xs text-fg-muted">
+          match
+          <select v-model="match" class="rounded-md border border-line-strong bg-surface px-1.5 py-0.5 text-xs">
+            <option value="any">any</option>
+            <option value="all">all</option>
+          </select>
+        </label>
       </div>
     </div>
 
@@ -212,7 +267,14 @@ onMounted(() => load())
               <div class="flex flex-wrap gap-1">
                 <FactPill v-for="(f, i) in (a.facts ?? []).slice(0, 4)" :key="i" :label="f.k" :value="f.v" />
                 <span v-if="(a.facts?.length ?? 0) > 4" class="chip-muted">+{{ a.facts!.length - 4 }}</span>
-                <TagChip v-for="t in (a.tags ?? []).slice(0, 3)" :key="t" :tag="t" />
+                <TagChip
+                  v-for="t in (a.tags ?? []).slice(0, 3)"
+                  :key="t"
+                  :tag="t"
+                  clickable
+                  :active="activeTags.includes(t)"
+                  @click="toggleTag(t)"
+                />
               </div>
             </td>
             <td class="px-4 py-2 text-xs">

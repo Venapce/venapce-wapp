@@ -1,33 +1,38 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
+import { apiErr } from '@/api/venapce'
 import { useOsctrlStore } from '@/stores/osctrl'
 import { useFlomorphicStore } from '@/stores/flomorphic'
-import { useIssueViewsStore } from '@/stores/issueViews'
+import { useSavedViewsStore } from '@/stores/savedViews'
 import BrandMark from '@/components/BrandMark.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import VersionBadge from '@/components/VersionBadge.vue'
 import Icon from '@/components/Icon.vue'
-import IssueViewDialog from '@/components/IssueViewDialog.vue'
-import type { IssueView } from '@/api/types'
+import SavedViewDialog from '@/components/SavedViewDialog.vue'
+import { VIEW_TABLES, tableMeta, viewRoute } from '@/lib/savedView'
+import type { SavedView, SavedViewTable } from '@/api/types'
 
 const osctrl = useOsctrlStore()
 const flo = useFlomorphicStore()
-const views = useIssueViewsStore()
+const views = useSavedViewsStore()
 const router = useRouter()
 
 // The dashboard workspace — everything here feeds building & viewing dashboards.
+// Datasets have no entry of their own: the Chart Builder lists them and
+// registers new ones, which is the only place they were ever used from.
 const dashboardNav = [
   { name: 'dashboards', label: 'Visualizations', icon: 'dashboard' },
   { name: 'builder', label: 'Chart Builder', icon: 'chartBar' },
-  { name: 'datasets', label: 'Datasets', icon: 'database' },
 ]
 
-// Operations: packaged flows that originate pipeline data — installed
-// packages, and the import wizard.
+// Operations: packaged flows that originate pipeline data. Importing is a
+// button on the Installed page, not a menu entry. Activities lives here too —
+// it spans every table (operation installs and sweeps included), so it isn't
+// part of the pipeline chain.
 const operationsNav = [
-  { name: 'operations', label: 'Installed', icon: 'box', to: { name: 'operations' } },
-  { name: 'operations-import', label: 'Import', icon: 'download', to: { name: 'operations', query: { import: '1' } } },
+  { name: 'operations', label: 'Installed', icon: 'box' },
+  { name: 'activities', label: 'Activities', icon: 'activity' },
 ]
 
 // Nodes (osctrl): enrolled systems and how to enroll new ones.
@@ -36,30 +41,47 @@ const nodesNav = [
   { name: 'nodes-enroll', label: 'Enroll', icon: 'plus' },
 ]
 
-// The add/edit saved-view dialog.
+// The add/edit saved-view dialog. A view is a named tag filter over any of the
+// pipeline tables — Stage, Findings, Issues or Activities. The views themselves
+// are stored by the backend, so these are async.
 const dialogOpen = ref(false)
-const editing = ref<IssueView | null>(null)
+const editing = ref<SavedView | null>(null)
+const defaultTable = ref<SavedViewTable>('issues')
+const viewError = ref('')
 
+/** New view; pre-selects the table you are looking at, if it is one. */
 function openNewView() {
   editing.value = null
+  const here = VIEW_TABLES.find((t) => t.route === router.currentRoute.value.name)
+  defaultTable.value = here?.key ?? 'issues'
   dialogOpen.value = true
 }
-function openEditView(v: IssueView) {
+function openEditView(v: SavedView) {
   editing.value = v
   dialogOpen.value = true
 }
-function saveView(payload: { name: string; tags: string[]; match: 'any' | 'all' }) {
-  if (editing.value) {
-    views.update(editing.value.id, payload)
-  } else {
-    const created = views.add(payload)
-    router.push({ name: 'issues-view', params: { viewId: created.id } })
+async function saveView(payload: { name: string; table: SavedViewTable; tags: string[]; match: 'any' | 'all' }) {
+  viewError.value = ''
+  try {
+    if (editing.value) {
+      await views.update(editing.value.id, payload)
+    } else {
+      router.push(viewRoute((await views.add(payload)).id))
+    }
+    dialogOpen.value = false
+  } catch (e) {
+    viewError.value = apiErr(e)
   }
-  dialogOpen.value = false
 }
-function deleteView(v: IssueView) {
-  views.remove(v.id)
-  if (router.currentRoute.value.params.viewId === v.id) router.push({ name: 'issues' })
+async function deleteView(v: SavedView) {
+  viewError.value = ''
+  const open = router.currentRoute.value.params.viewId === String(v.id)
+  try {
+    await views.remove(v.id)
+    if (open) router.push({ name: tableMeta(v.table).route })
+  } catch (e) {
+    viewError.value = apiErr(e)
+  }
 }
 
 // hostOf trims a URL down to its host for the compact connection rows.
@@ -140,9 +162,15 @@ onMounted(() => {
           <RouterLink
             v-for="item in operationsNav"
             :key="item.name"
-            :to="item.to"
+            :to="{ name: item.name }"
             class="nav-item"
-            :class="item.name === 'operations' && $route.name?.toString().startsWith('operation') && !$route.query.import ? 'is-active' : ''"
+            active-class="is-active"
+            :class="
+              (item.name === 'operations' && $route.name === 'operation-detail') ||
+              (item.name === 'activities' && $route.name === 'activity-detail')
+                ? 'is-active'
+                : ''
+            "
           >
             <Icon :name="item.icon" :size="16" />
             {{ item.label }}
@@ -179,48 +207,60 @@ onMounted(() => {
             <Icon name="flag" :size="16" />
             Issues
           </RouterLink>
-          <RouterLink :to="{ name: 'activities' }" class="nav-item" active-class="is-active">
-            <Icon name="activity" :size="16" />
-            Activities
-          </RouterLink>
 
-          <!-- Saved issue sub-views (tag filters) -->
-          <div class="mt-0.5 space-y-0.5 pl-4">
-            <div
-              v-for="v in views.views"
-              :key="v.id"
-              class="group flex items-center rounded-lg pr-1 hover:bg-accent-soft"
-            >
-              <RouterLink
-                :to="{ name: 'issues-view', params: { viewId: v.id } }"
-                class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-fg-muted"
-                active-class="text-accent"
-              >
-                <Icon name="hash" :size="13" class="text-fg-subtle" />
-                <span class="truncate">{{ v.name }}</span>
-              </RouterLink>
-              <button
-                class="icon-btn-plain hidden group-hover:inline-flex"
-                title="Edit view"
-                @click.prevent="openEditView(v)"
-              >
-                <Icon name="pencil" :size="13" />
-              </button>
-              <button
-                class="icon-btn-plain icon-btn--danger hidden group-hover:inline-flex"
-                title="Delete view"
-                @click.prevent="deleteView(v)"
-              >
-                <Icon name="trash" :size="13" />
+          <!-- Views: saved tag filters over any of the tables above -->
+          <div class="mt-3 border-t border-line pt-3">
+            <div class="flex items-center justify-between px-2.5 pb-1.5">
+              <p class="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
+                Views<span v-if="views.views.length > 9" class="ml-1 font-normal normal-case">({{ views.views.length }})</span>
+              </p>
+              <button class="icon-btn-plain" title="Add view" @click="openNewView">
+                <Icon name="plus" :size="14" />
               </button>
             </div>
+
+            <!-- A long list scrolls inside the section, so the menu above it
+                 stays reachable however many views are saved. -->
+            <div class="max-h-[34vh] overflow-y-auto">
+              <div
+                v-for="v in views.views"
+                :key="v.id"
+                class="group flex items-center rounded-lg pr-1 hover:bg-accent-soft"
+              >
+                <RouterLink
+                  :to="viewRoute(v.id)"
+                  class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-fg-muted"
+                  active-class="text-accent"
+                  :title="`${tableMeta(v.table).label} · #${v.tags.join(' #')}`"
+                >
+                  <Icon :name="tableMeta(v.table).icon" :size="13" class="text-fg-subtle" />
+                  <span class="truncate">{{ v.name }}</span>
+                </RouterLink>
+                <button class="icon-btn-plain hidden group-hover:inline-flex" title="Edit view" @click.prevent="openEditView(v)">
+                  <Icon name="pencil" :size="13" />
+                </button>
+                <button
+                  class="icon-btn-plain icon-btn--danger hidden group-hover:inline-flex"
+                  title="Delete view"
+                  @click.prevent="deleteView(v)"
+                >
+                  <Icon name="trash" :size="13" />
+                </button>
+              </div>
+            </div>
+
             <button
+              v-if="!views.views.length"
               class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-fg-subtle hover:bg-accent-soft hover:text-accent"
               @click="openNewView"
             >
               <Icon name="plus" :size="14" />
               Add view
             </button>
+            <!-- A failed save reads in full; a failed load just says so (the
+                 backend is down or predates /api/views) with the detail on hover. -->
+            <p v-if="viewError" class="px-2.5 pt-1 text-[11px] text-danger" :title="viewError">{{ viewError }}</p>
+            <p v-else-if="views.error" class="px-2.5 pt-1 text-[11px] text-danger" :title="views.error">Views unavailable</p>
           </div>
         </nav>
 
@@ -252,7 +292,13 @@ onMounted(() => {
       </main>
     </div>
 
-    <IssueViewDialog :open="dialogOpen" :editing="editing" @save="saveView" @close="dialogOpen = false" />
+    <SavedViewDialog
+      :open="dialogOpen"
+      :editing="editing"
+      :default-table="defaultTable"
+      @save="saveView"
+      @close="dialogOpen = false"
+    />
   </div>
 </template>
 

@@ -609,12 +609,34 @@ export type IssueInput = Partial<
   Pick<Issue, 'title' | 'summary' | 'status' | 'severity' | 'tags' | 'source' | 'origin' | 'assignee' | 'ref' | 'data' | 'meta'>
 > & { findingId?: number; stageId?: number }
 
-/** A user-defined saved sub-view under the Issues menu: a named tag filter. */
-export interface IssueView {
-  id: string
+/** Which pipeline table a saved view filters. */
+export type SavedViewTable = 'stage' | 'findings' | 'issues' | 'activities'
+
+/**
+ * A user-defined saved view in the sidebar: a named tag filter over one of the
+ * pipeline tables. Not just Issues — a view can carve out Stage, Findings or
+ * Activities the same way. Every one of those tables carries `tags`, which is
+ * what a view filters on.
+ *
+ * Stored by the backend (GET/POST/PUT/DELETE /api/views), so a view follows the
+ * operator across browsers.
+ */
+export interface SavedView {
+  id: number
   name: string
+  table: SavedViewTable
   tags: string[]
   match: 'any' | 'all'
+  createdAt?: string
+  updatedAt?: string
+}
+
+/** Body of POST/PUT /api/views (partial on update — absent = keep). */
+export interface SavedViewInput {
+  name?: string
+  table?: SavedViewTable
+  tags?: string[]
+  match?: 'any' | 'all'
 }
 
 // ---- Findings (the middle level) ----
@@ -687,6 +709,8 @@ export interface StageItem extends PipelineRow {
 
 /** Filter passed to GET /api/stage. */
 export interface StageQuery {
+  tags?: string[]
+  match?: 'any' | 'all'
   disposition?: StageDisposition
   source?: string
   search?: string

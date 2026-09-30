@@ -2,10 +2,12 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useConnectionStore } from '@/stores/connection'
+import { useSavedViewsStore } from '@/stores/savedViews'
 import { apiErr } from '@/api/venapce'
 import { relativeTime } from '@/lib/format'
 import { sampleStage } from '@/lib/samples'
 import { DISPOSITIONS, docShape, hasLink, rowRoute } from '@/lib/pipeline'
+import { tagsMatch } from '@/lib/savedView'
 import Pagination from '@/components/Pagination.vue'
 import Icon from '@/components/Icon.vue'
 import Badge from '@/components/pipeline/Badge.vue'
@@ -16,7 +18,13 @@ import type { StageItem } from '@/api/types'
 // routes each row (promote to a finding or an issue, hold, drop). This view
 // lists the rows and their routing; a row opens its detail page, where the
 // payload is explorable as a tree.
+//
+// A saved view (:viewId) seeds the tag filter and renames the page — the same
+// table, carved down to the tags the view names.
+const props = defineProps<{ viewId?: string }>()
+
 const conn = useConnectionStore()
+const viewsStore = useSavedViewsStore()
 const router = useRouter()
 
 const items = ref<StageItem[]>([])
@@ -25,6 +33,19 @@ const error = ref('')
 const sample = ref(false)
 const search = ref('')
 const disposition = ref<string>('')
+
+// Active tag filter — seeded from a saved view when one is open, otherwise
+// toggled interactively from the chips.
+const activeTags = ref<string[]>([])
+const match = ref<'any' | 'all'>('any')
+
+const savedView = computed(() => (props.viewId ? viewsStore.get(props.viewId) : undefined))
+
+const allTags = computed(() => {
+  const set = new Set<string>()
+  items.value.forEach((i) => i.tags?.forEach((t) => set.add(t)))
+  return [...set].sort()
+})
 
 const counts = computed(() => {
   const c: Record<string, number> = {}
@@ -36,6 +57,7 @@ const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
   return items.value.filter((i) => {
     if (disposition.value && i.disposition !== disposition.value) return false
+    if (!tagsMatch(i.tags, activeTags.value, match.value)) return false
     if (q && ![i.title, i.summary, i.source, i.origin].some((f) => (f ?? '').toLowerCase().includes(q))) return false
     return true
   })
@@ -47,7 +69,7 @@ const PAGE_SIZE = 25
 const page = ref(1)
 const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / PAGE_SIZE)))
 const paged = computed(() => filtered.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE))
-watch([search, disposition], () => (page.value = 1))
+watch([search, disposition, activeTags, match], () => (page.value = 1), { deep: true })
 watch(totalPages, (n) => {
   if (page.value > n) page.value = n
 })
@@ -56,7 +78,11 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    items.value = await conn.client.listStage()
+    // With a view open the backend does the tag filter; the chips then narrow
+    // whatever came back further.
+    items.value = await conn.client.listStage(
+      savedView.value ? { tags: savedView.value.tags, match: savedView.value.match } : {},
+    )
     sample.value = false
   } catch {
     items.value = sampleStage
@@ -65,6 +91,24 @@ async function load() {
     loading.value = false
   }
 }
+
+function toggleTag(tag: string) {
+  const i = activeTags.value.indexOf(tag)
+  if (i >= 0) activeTags.value.splice(i, 1)
+  else activeTags.value.push(tag)
+}
+
+// Seed (or clear) the tag filter from the saved view the route names.
+function applyView() {
+  const v = savedView.value
+  activeTags.value = v ? [...v.tags] : []
+  match.value = v?.match ?? 'any'
+}
+
+watch(() => props.viewId, () => {
+  applyView()
+  load()
+})
 
 function open(i: StageItem) {
   router.push(rowRoute('stage', i.id))
@@ -85,13 +129,18 @@ function docs(i: StageItem): string[] {
   return (['data', 'meta', 'ref'] as const).map((k) => (docShape(i[k]) ? `${k} · ${docShape(i[k])}` : '')).filter(Boolean)
 }
 
-onMounted(load)
+onMounted(async () => {
+  // Views come from the backend, so seed the filter only once they are in.
+  await viewsStore.load()
+  applyView()
+  load()
+})
 </script>
 
 <template>
   <div class="p-6">
     <div class="mb-1 flex items-center gap-3">
-      <h1 class="text-lg font-semibold text-fg">Stage</h1>
+      <h1 class="text-lg font-semibold text-fg">{{ savedView ? savedView.name : 'Stage' }}</h1>
       <span class="chip">{{ filtered.length }}</span>
       <div class="ml-auto flex items-center gap-2">
         <input v-model="search" class="field max-w-xs" placeholder="Search staged data…" />
@@ -99,8 +148,14 @@ onMounted(load)
       </div>
     </div>
     <p class="mb-4 text-sm text-fg-muted">
-      The pipeline inbox. Raw data waits here until a FloMorphic flow routes it — to a finding, straight to an issue, held, or dropped.
-      Open a row to explore its payload.
+      <template v-if="savedView">
+        Saved view — staged rows tagged
+        <span class="font-medium text-fg">{{ savedView.tags.join(savedView.match === 'all' ? ' + ' : ' / ') }}</span>.
+      </template>
+      <template v-else>
+        The pipeline inbox. Raw data waits here until a FloMorphic flow routes it — to a finding, straight to an issue, held, or dropped.
+        Open a row to explore its payload.
+      </template>
     </p>
 
     <div v-if="sample" class="mb-4 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning">
@@ -128,9 +183,31 @@ onMounted(load)
       </button>
     </div>
 
+    <!-- Tag filter bar -->
+    <div v-if="allTags.length" class="mb-4 flex flex-wrap items-center gap-2">
+      <TagChip
+        v-for="tag in allTags"
+        :key="tag"
+        :tag="tag"
+        clickable
+        :active="activeTags.includes(tag)"
+        @click="toggleTag(tag)"
+      />
+      <label v-if="activeTags.length > 1" class="ml-1 flex items-center gap-1 text-xs text-fg-muted">
+        match
+        <select v-model="match" class="rounded-md border border-line-strong bg-surface px-1.5 py-0.5 text-xs">
+          <option value="any">any</option>
+          <option value="all">all</option>
+        </select>
+      </label>
+      <button v-if="activeTags.length && !savedView" class="ml-1 text-xs text-fg-subtle hover:text-danger" @click="activeTags = []">
+        clear
+      </button>
+    </div>
+
     <p v-if="loading" class="text-sm text-fg-subtle">Loading…</p>
     <div v-else-if="filtered.length === 0" class="card p-10 text-center text-sm text-fg-subtle">
-      Nothing staged right now.
+      {{ activeTags.length ? 'No staged row matches this filter.' : 'Nothing staged right now.' }}
     </div>
 
     <div v-else class="card overflow-x-auto">
@@ -170,7 +247,7 @@ onMounted(load)
             </td>
             <td class="px-4 py-2">
               <div class="flex flex-wrap gap-1">
-                <TagChip v-for="t in i.tags" :key="t" :tag="t" />
+                <TagChip v-for="t in i.tags" :key="t" :tag="t" clickable :active="activeTags.includes(t)" @click="toggleTag(t)" />
                 <span v-if="!i.tags?.length" class="text-xs text-fg-subtle">—</span>
               </div>
             </td>

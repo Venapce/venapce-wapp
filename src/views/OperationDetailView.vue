@@ -163,7 +163,7 @@ function openInFlomorphic(f: OperationFlowState) {
     panelUrl.value = base
     writeValue(PANEL_KEY, base)
   }
-  window.open(`${base}/workflows/${encodeURIComponent(f.flowId)}`, '_blank', 'noopener')
+  window.open(`${base}/#/workflows/${encodeURIComponent(f.flowId)}`, '_blank', 'noopener')
 }
 function changePanelUrl() {
   const v = window.prompt('FloMorphic panel address', panelUrl.value)

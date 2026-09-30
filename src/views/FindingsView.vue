@@ -2,10 +2,12 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useConnectionStore } from '@/stores/connection'
+import { useSavedViewsStore } from '@/stores/savedViews'
 import { apiErr } from '@/api/venapce'
 import { relativeTime } from '@/lib/format'
 import { sampleFindings } from '@/lib/samples'
 import { FINDING_STATUSES, SEVERITIES, hasLink, humanize, rowRoute } from '@/lib/pipeline'
+import { tagsMatch } from '@/lib/savedView'
 import Pagination from '@/components/Pagination.vue'
 import Icon from '@/components/Icon.vue'
 import Badge from '@/components/pipeline/Badge.vue'
@@ -15,7 +17,13 @@ import type { Finding } from '@/api/types'
 // Findings — the middle level: what a process concluded from data, still to be
 // validated. Filter by status / severity / tags, open a row for its evidence,
 // enrichment and provenance, and promote it to an issue from there.
+//
+// A saved view (:viewId) seeds the tag filter and renames the page — the same
+// table, carved down to the tags the view names.
+const props = defineProps<{ viewId?: string }>()
+
 const conn = useConnectionStore()
+const viewsStore = useSavedViewsStore()
 const router = useRouter()
 
 const items = ref<Finding[]>([])
@@ -26,6 +34,9 @@ const search = ref('')
 const status = ref('')
 const severity = ref('')
 const activeTags = ref<string[]>([])
+const match = ref<'any' | 'all'>('any')
+
+const savedView = computed(() => (props.viewId ? viewsStore.get(props.viewId) : undefined))
 
 const counts = computed(() => {
   const c: Record<string, number> = {}
@@ -44,7 +55,7 @@ const filtered = computed(() => {
   return items.value.filter((i) => {
     if (status.value && i.status !== status.value) return false
     if (severity.value && (i.severity ?? 'info') !== severity.value) return false
-    if (activeTags.value.length && !activeTags.value.some((t) => i.tags?.includes(t))) return false
+    if (!tagsMatch(i.tags, activeTags.value, match.value)) return false
     if (
       q &&
       ![i.title, i.summary, i.source, i.origin, i.target, i.category, i.fingerprint].some((f) =>
@@ -60,7 +71,7 @@ const PAGE_SIZE = 25
 const page = ref(1)
 const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / PAGE_SIZE)))
 const paged = computed(() => filtered.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE))
-watch([search, status, severity, activeTags], () => (page.value = 1), { deep: true })
+watch([search, status, severity, activeTags, match], () => (page.value = 1), { deep: true })
 watch(totalPages, (n) => {
   if (page.value > n) page.value = n
 })
@@ -71,11 +82,25 @@ function toggleTag(tag: string) {
   else activeTags.value.push(tag)
 }
 
+// Seed (or clear) the tag filter from the saved view the route names.
+function applyView() {
+  const v = savedView.value
+  activeTags.value = v ? [...v.tags] : []
+  match.value = v?.match ?? 'any'
+}
+
+watch(() => props.viewId, () => {
+  applyView()
+  load()
+})
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    items.value = await conn.client.listFindings()
+    items.value = await conn.client.listFindings(
+      savedView.value ? { tags: savedView.value.tags, match: savedView.value.match } : {},
+    )
     sample.value = false
   } catch {
     items.value = sampleFindings
@@ -99,13 +124,18 @@ async function remove(f: Finding) {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  // Views come from the backend, so seed the filter only once they are in.
+  await viewsStore.load()
+  applyView()
+  load()
+})
 </script>
 
 <template>
   <div class="p-6">
     <div class="mb-1 flex items-center gap-3">
-      <h1 class="text-lg font-semibold text-fg">Findings</h1>
+      <h1 class="text-lg font-semibold text-fg">{{ savedView ? savedView.name : 'Findings' }}</h1>
       <span class="chip">{{ filtered.length }}</span>
       <div class="ml-auto flex items-center gap-2">
         <input v-model="search" class="field max-w-xs" placeholder="Search findings…" />
@@ -113,8 +143,14 @@ onMounted(load)
       </div>
     </div>
     <p class="mb-4 text-sm text-fg-muted">
-      What a process concluded from data — an observation with a severity, a confidence and a target, still to be validated.
-      Every finding records where its data came from and how it was made. Validated findings become issues.
+      <template v-if="savedView">
+        Saved view — findings tagged
+        <span class="font-medium text-fg">{{ savedView.tags.join(savedView.match === 'all' ? ' + ' : ' / ') }}</span>.
+      </template>
+      <template v-else>
+        What a process concluded from data — an observation with a severity, a confidence and a target, still to be validated.
+        Every finding records where its data came from and how it was made. Validated findings become issues.
+      </template>
     </p>
 
     <div v-if="sample" class="mb-4 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning">
@@ -146,16 +182,24 @@ onMounted(load)
       </select>
     </div>
     <div v-if="allTags.length" class="mb-4 flex flex-wrap items-center gap-2">
-      <button
+      <TagChip
         v-for="tag in allTags"
         :key="tag"
-        class="rounded-full px-2.5 py-1 text-xs font-medium transition-colors"
-        :class="activeTags.includes(tag) ? 'bg-accent text-accent-fg' : 'bg-surface-2 text-fg-muted hover:bg-accent-soft hover:text-accent'"
+        :tag="tag"
+        clickable
+        :active="activeTags.includes(tag)"
         @click="toggleTag(tag)"
-      >
-        #{{ tag }}
+      />
+      <label v-if="activeTags.length > 1" class="ml-1 flex items-center gap-1 text-xs text-fg-muted">
+        match
+        <select v-model="match" class="rounded-md border border-line-strong bg-surface px-1.5 py-0.5 text-xs">
+          <option value="any">any</option>
+          <option value="all">all</option>
+        </select>
+      </label>
+      <button v-if="activeTags.length && !savedView" class="ml-1 text-xs text-fg-subtle hover:text-danger" @click="activeTags = []">
+        clear
       </button>
-      <button v-if="activeTags.length" class="ml-1 text-xs text-fg-subtle hover:text-danger" @click="activeTags = []">clear</button>
     </div>
 
     <p v-if="loading" class="text-sm text-fg-subtle">Loading…</p>
@@ -200,7 +244,7 @@ onMounted(load)
             <td class="px-4 py-2 font-mono text-xs text-fg-muted">{{ f.target || '—' }}</td>
             <td class="px-4 py-2">
               <div class="flex flex-wrap gap-1">
-                <TagChip v-for="t in f.tags" :key="t" :tag="t" clickable :active="activeTags.includes(t)" @click.stop="toggleTag(t)" />
+                <TagChip v-for="t in f.tags" :key="t" :tag="t" clickable :active="activeTags.includes(t)" @click="toggleTag(t)" />
                 <span v-if="!f.tags?.length" class="text-xs text-fg-subtle">—</span>
               </div>
             </td>

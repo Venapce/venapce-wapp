@@ -496,7 +496,13 @@ export function localReadiness(
   }
 
   for (const d of req.datasets ?? []) {
-    checks.push({ kind: 'dataset', label: `Dataset "${d}"`, status: 'unknown', detail: 'Registered under Visualizations → Datasets', fix: 'datasets' })
+    checks.push({
+      kind: 'dataset',
+      label: `Dataset "${d}"`,
+      status: 'unknown',
+      detail: 'Registered from the Chart Builder dataset list',
+      fix: 'builder',
+    })
   }
 
   for (const name of missingParams(manifest, params)) {

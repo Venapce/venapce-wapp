@@ -21,6 +21,7 @@ import { toRenderModel } from '@/lib/echartsOption'
 import ChartRenderer from '@/components/ChartRenderer.vue'
 import Icon from '@/components/Icon.vue'
 import VizTypePicker from '@/components/builder/VizTypePicker.vue'
+import DatasetPicker from '@/components/builder/DatasetPicker.vue'
 import MetricEditor from '@/components/builder/MetricEditor.vue'
 import ControlSection from '@/components/builder/ControlSection.vue'
 import CategoricalControls from '@/components/builder/CategoricalControls.vue'
@@ -228,6 +229,12 @@ async function selectDataset(id: number) {
   }
 }
 
+/** A dataset was just registered: reload the list and chart it straight away. */
+async function datasetCreated(id: number) {
+  await loadDatasets()
+  await selectDataset(id)
+}
+
 function selectViz(v: VizType) {
   state.vizType = v
   applyVizDefaults(state, allColumns.value)
@@ -278,8 +285,8 @@ function errMsg(e: unknown): string {
 <template>
   <div class="grid h-full grid-cols-[340px_1fr]">
     <!-- ============ CONFIG PANEL ============ -->
-    <section class="flex flex-col overflow-y-auto border-r border-line bg-surface">
-      <header class="flex items-center gap-2 border-b border-line px-4 py-3">
+    <section class="flex flex-col overflow-hidden border-r border-line bg-surface">
+      <header class="flex shrink-0 items-center gap-2 border-b border-line px-4 py-3">
         <div class="min-w-0">
           <h2 class="text-sm font-semibold text-fg">Chart Builder</h2>
           <p class="truncate text-xs text-fg-subtle">Live Superset data · rendered by ECharts</p>
@@ -292,22 +299,16 @@ function errMsg(e: unknown): string {
         </button>
       </header>
 
-      <div class="space-y-4 p-4">
-        <!-- Dataset -->
-        <div>
-          <label class="label">Dataset</label>
-          <select
-            class="field"
-            :value="state.datasetId ?? ''"
-            :disabled="loadingDatasets"
-            @change="selectDataset(Number(($event.target as HTMLSelectElement).value))"
-          >
-            <option value="" disabled>{{ loadingDatasets ? 'Loading…' : 'Select a dataset' }}</option>
-            <option v-for="d in datasets" :key="d.id" :value="d.id">
-              {{ d.table_name }}<template v-if="d.database"> · {{ d.database.database_name }}</template>
-            </option>
-          </select>
-        </div>
+      <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+        <!-- Dataset — the list lives here; "+" registers a new table -->
+        <DatasetPicker
+          :datasets="datasets"
+          :model-value="state.datasetId"
+          :loading="loadingDatasets"
+          @update:model-value="selectDataset"
+          @created="datasetCreated"
+          @refresh="loadDatasets"
+        />
 
         <template v-if="detail">
           <!-- Viz type: five tiles + the full catalogue dialog -->

@@ -88,8 +88,9 @@ function sourceLabel(o: Operation): string {
   return 'pasted manifest'
 }
 
-// `?import=1` (the sidebar's Import item) opens the import wizard straight
-// away; `?pack=1` the packer.
+// Deep links still open the wizards: `?import=1` the importer, `?pack=1` the
+// packer. Both are also buttons in the header — there is no menu entry for
+// them, importing an operation *is* part of installing one.
 watch(
   () => [route.query.import, route.query.pack],
   ([imp, pack]) => {

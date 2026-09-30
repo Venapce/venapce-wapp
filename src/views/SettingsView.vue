@@ -53,7 +53,7 @@ onMounted(() => {
           New external databases — ClickHouse, Postgres, MySQL and others — are added directly in
           Superset, which manages the driver and encrypted credentials. Once a connection exists there,
           register tables from it as datasets under
-          <RouterLink :to="{ name: 'datasets' }" class="text-accent hover:underline">Visualizations → Datasets</RouterLink>.
+          <RouterLink :to="{ name: 'builder' }" class="text-accent hover:underline">Visualizations → Chart Builder</RouterLink>.
         </p>
         <a
           v-if="conn.supersetUrl"
