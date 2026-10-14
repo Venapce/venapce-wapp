@@ -164,8 +164,10 @@ onMounted(() => {
       <Icon name="box" :size="32" class="mb-3 text-fg-subtle" />
       <h2 class="mb-1 text-base font-semibold text-fg">No operations installed</h2>
       <p class="mb-4 text-sm text-fg-muted">
-        Import a package from a catalog repository or a folder on disk. The shipped example — a Linux fleet HTTP audit that writes one Stage
-        row per web server — lives in <code class="font-mono text-xs">examples/operations/</code>.
+        Import a package from a catalog repository or a folder on disk. The public catalog —
+        <a href="https://github.com/Venapce/operations" target="_blank" rel="noopener" class="underline hover:text-accent">github.com/Venapce/operations</a>
+        — holds worked operations you can install as they are: a Linux fleet HTTP audit that writes one Stage row per web server, and a Claude
+        agent that reviews a repository's recent commits.
       </p>
       <div class="flex justify-center gap-2">
         <button class="btn-outline" @click="packDialog = true"><Icon name="workflow" :size="14" /> New from FloMorphic flows</button>
