@@ -5,11 +5,15 @@ import { useConnectionStore } from '@/stores/connection'
 import { useFlomorphicStore } from '@/stores/flomorphic'
 import { apiErr } from '@/api/venapce'
 import { relativeTime } from '@/lib/format'
-import { readValue, writeValue } from '@/lib/localStore'
 import { renderMarkdown } from '@/lib/markdown'
+import { askPanelBase, openInFlomorphic, panelBase, setLocalPanelBase } from '@/lib/flomorphicLinks'
+import { runErrors } from '@/lib/runErrors'
 import { ROLE_CLASS, ROLE_ICON, ROLE_LABEL, SCALE_LABEL, describeCron, effectiveParams, flowsByStep, substituteParams } from '@/lib/operations'
 import Icon from '@/components/Icon.vue'
+import FlomorphicLink from '@/components/FlomorphicLink.vue'
 import Badge from '@/components/pipeline/Badge.vue'
+import RunErrorBadge from '@/components/pipeline/RunErrorBadge.vue'
+import RunErrorList from '@/components/pipeline/RunErrorList.vue'
 import ActivityTimeline from '@/components/pipeline/ActivityTimeline.vue'
 import ReadinessList from '@/components/operations/ReadinessList.vue'
 import ParamsForm from '@/components/operations/ParamsForm.vue'
@@ -37,17 +41,27 @@ const paramsDirty = ref(false)
 const picker = ref<OperationFlowState | null>(null)
 const timeline = ref<InstanceType<typeof ActivityTimeline> | null>(null)
 
-// Where the FloMorphic panel is, for "Open in FloMorphic". The backend knows
-// the API base only; the panel's address is asked once and kept locally.
-const PANEL_KEY = 'flomorphicPanelUrl'
-const panelUrl = ref(readValue<string>(PANEL_KEY, ''))
+// Where the FloMorphic panel is, for every "open in FloMorphic" on this page.
+// It comes from Settings → FloMorphic; until someone sets it there, the link
+// helper asks once and keeps the answer in this browser.
+const panelUrl = ref(panelBase())
 
 const readme = computed(() => (op.value?.readme ? renderMarkdown(op.value.readme) : ''))
-const steps = computed(() => flowsByStep(op.value?.flows ?? []))
+// Each flow with its last run's error ledger resolved alongside it — the chip,
+// the expansion and the expanded list would each re-derive it otherwise.
+const steps = computed(() => flowsByStep(op.value?.flows ?? []).map((f) => ({ ...f, errs: runErrors(f.lastRun) })))
 const multiStep = computed(() => steps.value.some((f) => f.step))
 const entry = computed(() => op.value?.flows.filter((f) => f.role === 'entry') ?? [])
 // Which flows have their doc expanded (by key).
 const docOpen = ref<Set<string>>(new Set())
+// Which flows have their last run's error ledger listed out (by key).
+const errorsOpen = ref<Set<string>>(new Set())
+function toggleErrors(key: string) {
+  const next = new Set(errorsOpen.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  errorsOpen.value = next
+}
 function toggleDoc(key: string) {
   const next = new Set(docOpen.value)
   if (next.has(key)) next.delete(key)
@@ -152,24 +166,21 @@ async function copyFlowFile(f: OperationFlowState) {
   })
 }
 
-function openInFlomorphic(f: OperationFlowState) {
+function openFlow(f: OperationFlowState) {
   if (!f.flowId) return
-  let base = panelUrl.value
-  if (!base) {
-    const guess = flo.apiUrl ? flo.apiUrl.replace(/\/+$/, '').replace(/:\d+$/, ':8027') : 'http://localhost:8027'
-    const v = window.prompt('Where is the FloMorphic panel (its web address)? Asked once, kept in this browser.', guess)
-    if (!v) return
-    base = v.trim().replace(/\/+$/, '')
-    panelUrl.value = base
-    writeValue(PANEL_KEY, base)
-  }
-  window.open(`${base}/#/workflows/${encodeURIComponent(f.flowId)}`, '_blank', 'noopener')
+  openInFlomorphic('flow', f.flowId)
+  panelUrl.value = panelBase()
 }
 function changePanelUrl() {
-  const v = window.prompt('FloMorphic panel address', panelUrl.value)
+  if (!panelUrl.value) {
+    askPanelBase()
+    panelUrl.value = panelBase()
+    return
+  }
+  const v = window.prompt('FloMorphic panel address (Settings → FloMorphic sets it for everyone)', panelUrl.value)
   if (v === null) return
-  panelUrl.value = v.trim().replace(/\/+$/, '')
-  writeValue(PANEL_KEY, panelUrl.value)
+  setLocalPanelBase(v)
+  panelUrl.value = panelBase()
 }
 
 function sourceLabel(): string {
@@ -280,6 +291,7 @@ onMounted(() => {
                       <span class="font-mono text-fg">{{ f.flowId }}</span>
                       <span v-if="f.flowTitle && f.flowTitle !== f.title" class="text-fg-subtle">· {{ f.flowTitle }}</span>
                       <span v-if="f.installedAt" class="text-fg-subtle">· installed {{ relativeTime(f.installedAt) }}</span>
+                      <FlomorphicLink kind="flow" :id="f.flowId" />
                     </p>
                     <p v-else class="mt-1 flex items-center gap-1.5 text-[11px] text-warning">
                       <Icon name="alertCircle" :size="11" /> not in FloMorphic yet
@@ -305,15 +317,19 @@ onMounted(() => {
                       <RouterLink :to="{ name: 'activity-detail', params: { id: String(f.lastRun.id) } }" class="hover:text-accent">
                         {{ relativeTime(f.lastRun.finishedAt || f.lastRun.startedAt || undefined) }}
                       </RouterLink>
+                      <!-- What that run hit on its way through. The status next
+                           to it can quite legitimately read `finished`. -->
+                      <RunErrorBadge v-if="f.errs" :errors="f.errs" :expanded="errorsOpen.has(f.key)" @toggle="toggleErrors(f.key)" />
                       <span v-if="f.lastRun.error" class="text-danger">· {{ f.lastRun.error }}</span>
                     </p>
+                    <RunErrorList v-if="f.errs && errorsOpen.has(f.key)" :errors="f.errs" class="mt-2" />
                   </div>
                   <div class="flex shrink-0 flex-wrap items-center gap-1.5">
                     <template v-if="f.flowId">
                       <button v-if="f.role === 'entry'" class="btn-primary btn-sm" :disabled="!!busy" @click="run(f)">
                         <Icon :name="busy === 'run:' + f.key ? 'loader' : 'play'" :size="13" :class="busy === 'run:' + f.key && 'animate-spin'" /> Run
                       </button>
-                      <button class="btn-outline btn-sm" title="Open the workflow on the FloMorphic canvas" @click="openInFlomorphic(f)">
+                      <button class="btn-outline btn-sm" title="Open the workflow on the FloMorphic canvas" @click="openFlow(f)">
                         <Icon name="external" :size="13" /> Open
                       </button>
                       <button class="btn-outline btn-sm" title="Push the file again (after a parameter change or a package update)" :disabled="!!busy" @click="installFlow(f)">

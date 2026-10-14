@@ -5,8 +5,12 @@ import { useConnectionStore } from '@/stores/connection'
 import { apiErr } from '@/api/venapce'
 import { relativeTime } from '@/lib/format'
 import { ACTIVITY_KINDS, ACTIVITY_STATUSES, JSON_DOCS, SUBJECT_ICON, activityOpen, humanize, rowRoute, type FieldSpec } from '@/lib/pipeline'
+import { runErrors } from '@/lib/runErrors'
 import Icon from '@/components/Icon.vue'
+import FlomorphicLink from '@/components/FlomorphicLink.vue'
 import Badge from '@/components/pipeline/Badge.vue'
+import RunErrorBadge from '@/components/pipeline/RunErrorBadge.vue'
+import RunErrorList from '@/components/pipeline/RunErrorList.vue'
 import FactChip from '@/components/pipeline/FactChip.vue'
 import FactPill from '@/components/pipeline/FactPill.vue'
 import TagChip from '@/components/pipeline/TagChip.vue'
@@ -44,6 +48,10 @@ const changes = computed(() => {
 })
 
 const process = computed(() => (row.value?.ref as { process?: Record<string, unknown> } | undefined)?.process ?? null)
+
+// What the run recorded while it ran. The status cannot stand in for it: a flow
+// carries on past a node error, so a `finished` run can carry a full ledger.
+const errs = computed(() => runErrors(row.value))
 
 const duration = computed(() => {
   const ms = Number(process.value?.durationMs ?? 0)
@@ -199,6 +207,7 @@ onMounted(() => load())
             <span v-if="subject?.title" class="max-w-[16rem] truncate text-fg-muted">· {{ subject.title }}</span>
           </RouterLink>
           <FactChip icon="workflow" label="Flow" :value="row.flowTitle" />
+          <FlomorphicLink v-if="row.flowId" kind="flow" :id="row.flowId" :size="13" />
           <FactChip icon="hash" label="Process" :value="row.processId ? String(row.processId) : ''" mono />
           <FactChip icon="clock" label="Took" :value="duration" />
           <FactChip icon="database" label="Origin" :value="row.origin" mono />
@@ -276,13 +285,47 @@ onMounted(() => load())
             </div>
           </section>
 
+          <!-- Everything the run hit on its way to the outcome above. It sits
+               with the outcome, not in the bookkeeping: a conclusion reached
+               with three nodes broken is a different conclusion. -->
+          <section v-if="errs">
+            <h3 class="label flex items-center gap-2">
+              <Icon name="alert" :size="12" /> Errors during the run
+              <RunErrorBadge :errors="errs" :interactive="false" />
+            </h3>
+            <p class="mb-2 text-xs text-fg-muted">
+              A flow does not stop for a node error — it is recorded and the run carries on — so these can sit under a run that
+              finished. Each one says whose it was: <span class="font-medium">node</span> is the flow's own (its data, its js or
+              rego, something it called), <span class="font-medium">system</span> is the platform's.
+            </p>
+            <RunErrorList :errors="errs" />
+          </section>
+
           <section v-if="isRun">
             <h3 class="label">Run</h3>
             <dl class="divide-y divide-line rounded-md border border-line text-xs">
-              <div class="flex gap-3 px-3 py-1.5"><dt class="w-28 shrink-0 text-fg-muted">Flow</dt><dd class="min-w-0 flex-1 break-all font-mono text-fg">{{ row.flowTitle }} <span class="text-fg-subtle">{{ row.flowId }}</span></dd></div>
-              <div class="flex gap-3 px-3 py-1.5"><dt class="w-28 shrink-0 text-fg-muted">Process</dt><dd class="min-w-0 flex-1 break-all font-mono text-fg">{{ row.processId || '—' }}</dd></div>
+              <div class="flex items-center gap-3 px-3 py-1.5">
+                <dt class="w-28 shrink-0 text-fg-muted">Flow</dt>
+                <dd class="flex min-w-0 flex-1 flex-wrap items-center gap-2 break-all font-mono text-fg">
+                  {{ row.flowTitle }} <span class="text-fg-subtle">{{ row.flowId }}</span>
+                  <FlomorphicLink v-if="row.flowId" kind="flow" :id="row.flowId" />
+                </dd>
+              </div>
+              <div class="flex items-center gap-3 px-3 py-1.5">
+                <dt class="w-28 shrink-0 text-fg-muted">Process</dt>
+                <dd class="flex min-w-0 flex-1 flex-wrap items-center gap-2 break-all font-mono text-fg">
+                  {{ row.processId || '—' }}
+                  <FlomorphicLink v-if="row.processId" kind="processes" label="Open runs" />
+                </dd>
+              </div>
               <div class="flex gap-3 px-3 py-1.5"><dt class="w-28 shrink-0 text-fg-muted">PID</dt><dd class="min-w-0 flex-1 break-all font-mono text-fg">{{ row.pid || '—' }}</dd></div>
-              <div class="flex gap-3 px-3 py-1.5"><dt class="w-28 shrink-0 text-fg-muted">Context doc</dt><dd class="min-w-0 flex-1 break-all font-mono text-fg">{{ row.contextId || '—' }}</dd></div>
+              <div class="flex items-center gap-3 px-3 py-1.5">
+                <dt class="w-28 shrink-0 text-fg-muted">Context doc</dt>
+                <dd class="flex min-w-0 flex-1 flex-wrap items-center gap-2 break-all font-mono text-fg">
+                  {{ row.contextId || '—' }}
+                  <FlomorphicLink v-if="row.contextId" kind="context" :id="row.contextId" />
+                </dd>
+              </div>
             </dl>
           </section>
         </div>

@@ -30,6 +30,9 @@ interface State {
   jwtSecretSet: boolean
   /** Host infra answers on (NATS :4222 / osspace :8022). */
   infraHost: string
+  /** Where the FloMorphic web panel answers in a browser — the base every
+   *  "open in FloMorphic" link is built from. Empty when nobody has said. */
+  panelUrl: string
   /** True while the access is the backend environment's (nothing saved here). */
   apiFromEnv: boolean
   /** Last reachability probe of the FloMorphic API (null until one ran). */
@@ -56,6 +59,7 @@ export const useFlomorphicStore = defineStore('flomorphic', {
     apiUrl: '',
     jwtSecretSet: false,
     infraHost: '',
+    panelUrl: '',
     apiFromEnv: true,
     reachable: null,
     reachError: '',
@@ -87,7 +91,7 @@ export const useFlomorphicStore = defineStore('flomorphic', {
      * the backend environment. Applies immediately — no container restart — and the
      * response says whether FloMorphic actually answered.
      */
-    async saveAccess(body: { url: string; jwtSecret?: string; infraHost?: string }) {
+    async saveAccess(body: { url: string; jwtSecret?: string; infraHost?: string; panelUrl?: string }) {
       const res = await this.client().saveFlomorphicAccess(body)
       this.applyAccess(res)
       return res
@@ -162,6 +166,7 @@ export const useFlomorphicStore = defineStore('flomorphic', {
       this.apiUrl = res.apiUrl ?? ''
       this.jwtSecretSet = !!res.jwtSecretSet
       this.infraHost = res.infraHost ?? ''
+      this.panelUrl = res.panelUrl ?? ''
       this.apiFromEnv = !!res.apiFromEnv
       this.reachable = res.reachable ?? null
       this.reachError = res.reachError ?? ''
@@ -177,6 +182,7 @@ export const useFlomorphicStore = defineStore('flomorphic', {
       this.apiUrl = view.apiUrl ?? ''
       this.jwtSecretSet = !!view.jwtSecretSet
       this.infraHost = view.infraHost ?? ''
+      this.panelUrl = view.panelUrl ?? ''
       this.apiFromEnv = !!view.apiFromEnv
       this.plugin = view.plugin ?? null
     },

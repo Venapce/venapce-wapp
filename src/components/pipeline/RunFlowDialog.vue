@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useConnectionStore } from '@/stores/connection'
 import { apiErr } from '@/api/venapce'
 import Icon from '@/components/Icon.vue'
+import FlomorphicLink from '@/components/FlomorphicLink.vue'
 import type { Activity, FlowSummary, SubjectKind } from '@/api/types'
 
 // "Run a flow on this row": pick one of the FloMorphic flows (listed live from
@@ -126,17 +127,25 @@ onMounted(() => {
           No flows found. Design one in FloMorphic first.
         </div>
         <ul v-else class="max-h-64 divide-y divide-line overflow-y-auto rounded-md border border-line">
-          <li v-for="f in filtered" :key="f.id">
+          <li
+            v-for="f in filtered"
+            :key="f.id"
+            class="flex items-center gap-1 pr-2 transition-colors hover:bg-accent-soft"
+            :class="selected?.id === f.id ? 'bg-accent-soft' : ''"
+          >
             <button
               type="button"
-              class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-accent-soft"
-              :class="selected?.id === f.id ? 'bg-accent-soft text-accent' : 'text-fg'"
+              class="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-sm"
+              :class="selected?.id === f.id ? 'text-accent' : 'text-fg'"
               @click="selected = f"
             >
               <Icon :name="selected?.id === f.id ? 'checkCircle' : 'workflow'" :size="14" class="shrink-0" />
               <span class="min-w-0 flex-1 truncate">{{ f.title }}</span>
               <span class="shrink-0 font-mono text-[10px] text-fg-subtle">{{ f.id }}</span>
             </button>
+            <!-- Read the flow before handing it a row: a list of titles says
+                 nothing about what the thing actually does. -->
+            <FlomorphicLink kind="flow" :id="f.id" icon-only />
           </li>
         </ul>
 

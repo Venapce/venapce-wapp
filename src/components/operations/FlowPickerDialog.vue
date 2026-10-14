@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useConnectionStore } from '@/stores/connection'
 import { apiErr } from '@/api/venapce'
 import Icon from '@/components/Icon.vue'
+import FlomorphicLink from '@/components/FlomorphicLink.vue'
 import type { FlowSummary } from '@/api/types'
 
 // "Link to an existing flow": bind a manifest flow key to a workflow already
@@ -65,12 +66,15 @@ watch(
         <p v-else-if="loading" class="text-xs text-fg-subtle">Loading flows…</p>
         <p v-else-if="filtered.length === 0" class="text-xs text-fg-subtle">No flow matches.</p>
         <ul v-else class="divide-y divide-line rounded-md border border-line">
-          <li v-for="f in filtered" :key="f.id">
-            <button class="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-accent-soft" @click="emit('pick', f)">
+          <li v-for="f in filtered" :key="f.id" class="flex items-center gap-1 pr-2 hover:bg-accent-soft">
+            <button class="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left" @click="emit('pick', f)">
               <Icon name="workflow" :size="14" class="shrink-0 text-fg-subtle" />
               <span class="min-w-0 flex-1 truncate text-sm text-fg">{{ f.title }}</span>
               <span class="shrink-0 font-mono text-[10px] text-fg-subtle">{{ f.id }}</span>
             </button>
+            <!-- Bind the right one: two flows of the same name are told apart
+                 on the canvas, not in this list. -->
+            <FlomorphicLink kind="flow" :id="f.id" icon-only />
           </li>
         </ul>
       </div>

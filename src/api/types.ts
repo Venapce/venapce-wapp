@@ -256,6 +256,10 @@ export interface FlomorphicSettingsView {
   jwtSecretSet?: boolean
   /** Host infra answers on — NATS :4222 for the plugin, osspace :8022 for osctrl. */
   infraHost?: string
+  /** Where the FloMorphic web panel answers in a browser — what the "open in
+   *  FloMorphic" links point at. Empty when nobody has said, and those links
+   *  then ask once rather than guess. */
+  panelUrl?: string
   /** True while these come straight from the backend environment (nothing saved
    *  here yet), so the card can label them and offer "reset to environment". */
   apiFromEnv?: boolean
@@ -268,6 +272,8 @@ export interface FlomorphicAccessResult {
   apiUrl?: string
   jwtSecretSet?: boolean
   infraHost?: string
+  /** Where the FloMorphic web panel answers, for the "open in FloMorphic" links. */
+  panelUrl?: string
   apiFromEnv?: boolean
   /** Whether a live probe reached FloMorphic and it accepted the signed token. */
   reachable?: boolean
@@ -756,6 +762,41 @@ export interface ActivityFact {
   v: unknown
 }
 
+/** Whose error a recorded one was. `node` is the flow author's own — their js or
+ *  rego, the node data they wrote, something their node called that did not
+ *  deliver — and is what they can act on. `system` is the platform's: infra that
+ *  would not answer, a reply that would not marshal. Nothing in the flow caused
+ *  it and nothing in the flow mends it. */
+export type RunErrorKind = 'node' | 'system'
+
+/** One entry of a run's error ledger (fractal-core `models.NodeError`). */
+export interface RunErrorItem {
+  ts: number
+  kind: RunErrorKind
+  /** The flow the error was raised in — a run that went through a GoTo has
+   *  entries from more than one. */
+  flow: string
+  node: string
+  /** The actor that raised it — `rt` / `js` / `rego` / `plugin:<title>`. */
+  src: string
+  /** Engine status code (fractal `StatusFractal`). */
+  code: number
+  msg: string
+  /** JSON path the failure happened on. Set only for a node running over a
+   *  fan-out, where the node id alone does not place it. */
+  loc?: string
+}
+
+/** Everything that went wrong during one run, as FloMorphic lifted it off the
+ *  engine. `count` is the true total and `items` may be shorter: the ledger
+ *  rides inside the context document, which has a publish limit, so a cascading
+ *  run's entries are capped at the earliest — where the cause of a cascade is. */
+export interface RunErrors {
+  pid: string
+  count: number
+  items: RunErrorItem[]
+}
+
 export interface Activity {
   id: number | string
   subjectKind: SubjectKind
@@ -779,7 +820,15 @@ export interface Activity {
   processId?: number
   pid?: string
   contextId?: string
+  /** The single fatal cause, when there was one. A run that hit node errors and
+   *  still completed has the ledger's summary here instead, so nothing that
+   *  reads `error` alone reports it as clean. */
   error?: string
+  /** The run's error ledger. A flow does not stop for a node error — fractal
+   *  records it and carries on — so a `finished` run can still carry one, and
+   *  this is the only place that says what went wrong, where and whose it was.
+   *  `{}` (or absent) for a clean run and every manual activity. */
+  errors?: RunErrors
   /** Provenance: process bookkeeping, or the field diff of an edit ({changed:{field:{from,to}}}). */
   ref?: JsonDoc
   /** The run's output document, any shape. */
@@ -944,8 +993,10 @@ export interface OperationFlowState extends OperationFlowSpec {
   missingActions?: { action: string; plugin: string; repo?: string; nodes?: string[] }[]
   /** The compile check's error at install time, if any (advisory). */
   compileError?: string
-  /** Last run of this flow started from the operation. */
-  lastRun?: Pick<Activity, 'id' | 'status' | 'title' | 'startedAt' | 'finishedAt' | 'error'>
+  /** Last run of this flow started from the operation, with the error ledger it
+   *  recorded — a flow carries on past a node error, so `status` alone cannot
+   *  say that it finished having hit things. */
+  lastRun?: Pick<Activity, 'id' | 'status' | 'title' | 'startedAt' | 'finishedAt' | 'error' | 'errors'>
 }
 
 /** One readiness check of a requirement — what the operation page ticks off. */
@@ -987,6 +1038,9 @@ export interface Operation {
   flowsTotal?: number
   lastRunAt?: string
   lastRunStatus?: ActivityStatus
+  /** How many errors that run recorded (absent when none). The status can read
+   *  `finished` on a run that hit a dozen, so the card flags this separately. */
+  lastRunErrors?: number
   installedAt?: string
   updatedAt?: string
 }

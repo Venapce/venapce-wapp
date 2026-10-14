@@ -246,6 +246,8 @@ export class VenapceClient {
     url: string
     jwtSecret?: string
     infraHost?: string
+    /** Where the panel answers in a browser, for the "open in FloMorphic" links. */
+    panelUrl?: string
   }): Promise<FlomorphicAccessResult> {
     const { data } = await this.http.put('/api/settings/flomorphic/api', body)
     return data

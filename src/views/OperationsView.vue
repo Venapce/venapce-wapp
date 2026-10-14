@@ -217,6 +217,16 @@ onMounted(() => {
             <span v-if="o.lastRunAt" class="inline-flex items-center gap-1.5">
               <Badge v-if="o.lastRunStatus" kind="activity-status" :value="o.lastRunStatus" />
               {{ relativeTime(o.lastRunAt) }}
+              <!-- The run recorded errors. It may well have finished anyway —
+                   a flow carries on past a node error — so this is the only
+                   thing on the card that says the last run went badly. -->
+              <span
+                v-if="o.lastRunErrors"
+                class="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 font-semibold text-amber-600 dark:text-amber-400"
+                :title="`The last run recorded ${o.lastRunErrors} error${o.lastRunErrors === 1 ? '' : 's'} — open the operation to see them`"
+              >
+                <Icon name="alert" :size="10" /> {{ o.lastRunErrors }}
+              </span>
             </span>
             <span v-else class="italic">never run</span>
           </div>

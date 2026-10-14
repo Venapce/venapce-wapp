@@ -7,11 +7,15 @@ import { apiErr } from '@/api/venapce'
 import { relativeTime } from '@/lib/format'
 import { ACTIVITY_KINDS, ACTIVITY_STATUSES, SUBJECT_ICON, activityOpen, humanize, rowRoute } from '@/lib/pipeline'
 import { tagsMatch } from '@/lib/savedView'
+import { runErrors } from '@/lib/runErrors'
 import Pagination from '@/components/Pagination.vue'
 import Icon from '@/components/Icon.vue'
+import FlomorphicLink from '@/components/FlomorphicLink.vue'
 import Badge from '@/components/pipeline/Badge.vue'
 import FactPill from '@/components/pipeline/FactPill.vue'
 import TagChip from '@/components/pipeline/TagChip.vue'
+import RunErrorBadge from '@/components/pipeline/RunErrorBadge.vue'
+import RunErrorList from '@/components/pipeline/RunErrorList.vue'
 import type { Activity } from '@/api/types'
 
 // Activities — everything that happened, across the whole product: every
@@ -78,7 +82,22 @@ const filtered = computed(() => {
 const PAGE_SIZE = 25
 const page = ref(1)
 const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / PAGE_SIZE)))
-const paged = computed(() => filtered.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE))
+// Each row with its error ledger resolved once, rather than in the template
+// where the chip and the expanded list would each re-derive it.
+const paged = computed(() =>
+  filtered.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE).map((a) => ({ a, errs: runErrors(a) })),
+)
+
+// How many of the runs in view came back having hit something. Not the same as
+// how many failed: a flow carries on past a node error, so most of these say
+// `finished`.
+const erroredCount = computed(() => filtered.value.filter((a) => runErrors(a)).length)
+
+/** Which rows have their errors listed under them, by activity id. */
+const openErrors = ref<(number | string)[]>([])
+function toggleErrors(id: number | string) {
+  openErrors.value = openErrors.value.includes(id) ? openErrors.value.filter((x) => x !== id) : [...openErrors.value, id]
+}
 watch([search, kind, status, activeTags, match], () => (page.value = 1), { deep: true })
 watch(totalPages, (n) => {
   if (page.value > n) page.value = n
@@ -159,6 +178,13 @@ onMounted(async () => {
       <span class="chip">{{ filtered.length }}</span>
       <span v-if="anyOpen" class="inline-flex items-center gap-1 text-xs text-accent">
         <Icon name="loader" :size="12" class="animate-spin" /> runs in progress
+      </span>
+      <span
+        v-if="erroredCount"
+        class="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"
+        title="Runs that recorded at least one error while running — a flow carries on past a node error, so most of them still say finished"
+      >
+        <Icon name="alert" :size="12" /> {{ erroredCount }} run{{ erroredCount === 1 ? '' : 's' }} recorded errors
       </span>
       <div class="ml-auto flex items-center gap-2">
         <input v-model="search" class="field max-w-xs" placeholder="Search outcomes, flows, subjects…" />
@@ -242,56 +268,68 @@ onMounted(async () => {
           </tr>
         </thead>
         <tbody class="divide-y divide-line">
-          <tr v-for="a in paged" :key="a.id" class="cursor-pointer align-top hover:bg-accent-soft/40" @click="open(a)">
-            <td class="px-4 py-2"><Badge kind="activity-kind" :value="a.kind" /></td>
-            <td class="px-4 py-2"><Badge kind="activity-status" :value="a.status" /></td>
-            <td class="max-w-md px-4 py-2">
-              <div class="truncate font-medium text-fg">{{ a.title || `${humanize(a.kind)} #${a.id}` }}</div>
-              <div v-if="a.error" class="truncate text-xs text-danger">{{ a.error }}</div>
-              <div v-else-if="a.description" class="line-clamp-1 text-xs text-fg-muted">{{ a.description }}</div>
-              <div v-if="a.remediation" class="mt-0.5 flex items-center gap-1 truncate text-xs text-fg-muted">
-                <Icon name="wrench" :size="11" class="shrink-0 text-fg-subtle" /><span class="truncate">{{ a.remediation }}</span>
-              </div>
-            </td>
-            <td class="px-4 py-2">
-              <RouterLink
-                :to="rowRoute(a.subjectKind, a.subjectId)"
-                class="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-line bg-surface px-2 py-0.5 font-mono text-[11px] text-fg hover:border-accent-border hover:text-accent"
-                @click.stop
-              >
-                <Icon :name="SUBJECT_ICON[a.subjectKind] ?? 'circleDot'" :size="11" class="text-fg-subtle" />
-                {{ a.subjectKind }} #{{ a.subjectId }}
-              </RouterLink>
-            </td>
-            <td class="max-w-xs px-4 py-2">
-              <div class="flex flex-wrap gap-1">
-                <FactPill v-for="(f, i) in (a.facts ?? []).slice(0, 4)" :key="i" :label="f.k" :value="f.v" />
-                <span v-if="(a.facts?.length ?? 0) > 4" class="chip-muted">+{{ a.facts!.length - 4 }}</span>
-                <TagChip
-                  v-for="t in (a.tags ?? []).slice(0, 3)"
-                  :key="t"
-                  :tag="t"
-                  clickable
-                  :active="activeTags.includes(t)"
-                  @click="toggleTag(t)"
-                />
-              </div>
-            </td>
-            <td class="px-4 py-2 text-xs">
-              <div v-if="a.flowTitle" class="flex items-center gap-1 text-fg">
-                <Icon name="workflow" :size="11" class="shrink-0 text-fg-subtle" /><span class="truncate">{{ a.flowTitle }}</span>
-              </div>
-              <div class="font-mono text-[11px] text-fg-subtle">{{ a.origin }}<span v-if="a.processId"> · p{{ a.processId }}</span></div>
-            </td>
-            <td class="whitespace-nowrap px-4 py-2 text-xs text-fg-muted" :title="a.finishedAt || a.createdAt">
-              {{ relativeTime(a.finishedAt || a.createdAt) }}
-            </td>
-            <td class="px-2 py-2">
-              <button class="icon-btn-plain icon-btn--danger" title="Delete activity" @click.stop="remove(a)">
-                <Icon name="trash" :size="13" />
-              </button>
-            </td>
-          </tr>
+          <template v-for="{ a, errs } in paged" :key="a.id">
+            <tr class="cursor-pointer align-top hover:bg-accent-soft/40" @click="open(a)">
+              <td class="px-4 py-2"><Badge kind="activity-kind" :value="a.kind" /></td>
+              <td class="px-4 py-2"><Badge kind="activity-status" :value="a.status" /></td>
+              <td class="max-w-md px-4 py-2">
+                <div class="truncate font-medium text-fg">{{ a.title || `${humanize(a.kind)} #${a.id}` }}</div>
+                <!-- The run hit things on the way to this outcome. The status
+                     column may well read `finished`; this is what says otherwise. -->
+                <div v-if="errs" class="mt-0.5">
+                  <RunErrorBadge :errors="errs" :expanded="openErrors.includes(a.id)" @toggle="toggleErrors(a.id)" />
+                </div>
+                <div v-if="a.error" class="truncate text-xs text-danger">{{ a.error }}</div>
+                <div v-else-if="a.description" class="line-clamp-1 text-xs text-fg-muted">{{ a.description }}</div>
+                <div v-if="a.remediation" class="mt-0.5 flex items-center gap-1 truncate text-xs text-fg-muted">
+                  <Icon name="wrench" :size="11" class="shrink-0 text-fg-subtle" /><span class="truncate">{{ a.remediation }}</span>
+                </div>
+              </td>
+              <td class="px-4 py-2">
+                <RouterLink
+                  :to="rowRoute(a.subjectKind, a.subjectId)"
+                  class="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-line bg-surface px-2 py-0.5 font-mono text-[11px] text-fg hover:border-accent-border hover:text-accent"
+                  @click.stop
+                >
+                  <Icon :name="SUBJECT_ICON[a.subjectKind] ?? 'circleDot'" :size="11" class="text-fg-subtle" />
+                  {{ a.subjectKind }} #{{ a.subjectId }}
+                </RouterLink>
+              </td>
+              <td class="max-w-xs px-4 py-2">
+                <div class="flex flex-wrap gap-1">
+                  <FactPill v-for="(f, i) in (a.facts ?? []).slice(0, 4)" :key="i" :label="f.k" :value="f.v" />
+                  <span v-if="(a.facts?.length ?? 0) > 4" class="chip-muted">+{{ a.facts!.length - 4 }}</span>
+                  <TagChip
+                    v-for="t in (a.tags ?? []).slice(0, 3)"
+                    :key="t"
+                    :tag="t"
+                    clickable
+                    :active="activeTags.includes(t)"
+                    @click="toggleTag(t)"
+                  />
+                </div>
+              </td>
+              <td class="px-4 py-2 text-xs">
+                <div v-if="a.flowTitle" class="flex items-center gap-1 text-fg">
+                  <Icon name="workflow" :size="11" class="shrink-0 text-fg-subtle" /><span class="truncate">{{ a.flowTitle }}</span>
+                </div>
+                <div class="font-mono text-[11px] text-fg-subtle">{{ a.origin }}<span v-if="a.processId"> · p{{ a.processId }}</span></div>
+                <!-- Straight to the flow that produced the row, on the canvas. -->
+                <FlomorphicLink v-if="a.flowId" kind="flow" :id="a.flowId" label="Open flow" class="mt-1" />
+              </td>
+              <td class="whitespace-nowrap px-4 py-2 text-xs text-fg-muted" :title="a.finishedAt || a.createdAt">
+                {{ relativeTime(a.finishedAt || a.createdAt) }}
+              </td>
+              <td class="px-2 py-2">
+                <button class="icon-btn-plain icon-btn--danger" title="Delete activity" @click.stop="remove(a)">
+                  <Icon name="trash" :size="13" />
+                </button>
+              </td>
+            </tr>
+            <tr v-if="errs && openErrors.includes(a.id)" class="bg-surface-2">
+              <td colspan="8" class="px-4 py-3"><RunErrorList :errors="errs" /></td>
+            </tr>
+          </template>
         </tbody>
       </table>
       <div class="border-t border-line px-4 py-2">

@@ -4,10 +4,14 @@ import { useConnectionStore } from '@/stores/connection'
 import { apiErr } from '@/api/venapce'
 import { relativeTime } from '@/lib/format'
 import { activityOpen, rowRoute } from '@/lib/pipeline'
+import { runErrors } from '@/lib/runErrors'
 import Icon from '@/components/Icon.vue'
+import FlomorphicLink from '@/components/FlomorphicLink.vue'
 import Badge from './Badge.vue'
 import FactPill from './FactPill.vue'
 import TagChip from './TagChip.vue'
+import RunErrorBadge from './RunErrorBadge.vue'
+import RunErrorList from './RunErrorList.vue'
 import RunFlowDialog from './RunFlowDialog.vue'
 import type { Activity, SubjectKind } from '@/api/types'
 
@@ -25,6 +29,19 @@ const dialog = ref(false)
 
 const anyOpen = computed(() => items.value.some((a) => activityOpen(a.status)))
 const runs = computed(() => items.value.filter((a) => a.kind === 'run').length)
+
+// Each entry with its error ledger already resolved — the chip, the expansion
+// and the expanded list would otherwise each re-derive it on every repaint.
+const rows = computed(() => items.value.map((a) => ({ a, errs: runErrors(a) })))
+// How many runs on this row came back having hit something. A flow does not
+// stop for a node error, so this is not the same as how many failed.
+const withErrors = computed(() => rows.value.filter((r) => r.errs).length)
+
+/** Which runs have their errors listed under them, by activity id. */
+const openErrors = ref<(number | string)[]>([])
+function toggleErrors(id: number | string) {
+  openErrors.value = openErrors.value.includes(id) ? openErrors.value.filter((x) => x !== id) : [...openErrors.value, id]
+}
 
 async function load(quiet = false) {
   if (!quiet) loading.value = true
@@ -93,7 +110,7 @@ defineExpose({ reload: () => load(true) })
     </div>
 
     <ol v-else class="relative space-y-2 border-l border-line pl-4">
-      <li v-for="a in items" :key="a.id" class="relative">
+      <li v-for="{ a, errs } in rows" :key="a.id" class="relative">
         <!-- timeline dot -->
         <span
           class="absolute -left-[21px] top-3 h-2.5 w-2.5 rounded-full border-2 border-surface"
@@ -101,34 +118,50 @@ defineExpose({ reload: () => load(true) })
             a.status === 'failed' ? 'bg-danger' : activityOpen(a.status) ? 'bg-accent animate-pulse' : a.kind === 'run' ? 'bg-success' : 'bg-line'
           "
         ></span>
-        <RouterLink :to="rowRoute('activity', a.id)" class="card block p-3 transition-colors hover:border-accent-border">
-          <div class="flex flex-wrap items-center gap-1.5">
-            <Badge kind="activity-kind" :value="a.kind" />
-            <Badge v-if="a.kind === 'run' || a.status !== 'finished'" kind="activity-status" :value="a.status" />
-            <span class="min-w-0 flex-1 truncate text-sm font-medium text-fg">{{ a.title || `${a.kind} #${a.id}` }}</span>
-            <span class="text-[11px] text-fg-subtle" :title="a.finishedAt || a.createdAt">{{ relativeTime(a.finishedAt || a.createdAt) }}</span>
+        <div class="card overflow-hidden transition-colors hover:border-accent-border">
+          <RouterLink :to="rowRoute('activity', a.id)" class="block p-3">
+            <div class="flex flex-wrap items-center gap-1.5">
+              <Badge kind="activity-kind" :value="a.kind" />
+              <Badge v-if="a.kind === 'run' || a.status !== 'finished'" kind="activity-status" :value="a.status" />
+              <span class="min-w-0 flex-1 truncate text-sm font-medium text-fg">{{ a.title || `${a.kind} #${a.id}` }}</span>
+              <span class="text-[11px] text-fg-subtle" :title="a.finishedAt || a.createdAt">{{ relativeTime(a.finishedAt || a.createdAt) }}</span>
+            </div>
+            <div v-if="a.kind === 'run' && a.flowTitle && a.flowTitle !== a.title" class="mt-1 flex items-center gap-1 text-[11px] text-fg-muted">
+              <Icon name="workflow" :size="11" /> {{ a.flowTitle }}
+              <span v-if="a.processId" class="font-mono text-fg-subtle">· process {{ a.processId }}</span>
+            </div>
+            <p v-if="a.error" class="mt-1 truncate text-xs text-danger">{{ a.error }}</p>
+            <p v-else-if="a.description" class="mt-1 line-clamp-2 text-xs text-fg-muted">{{ a.description }}</p>
+            <p v-else-if="a.kind === 'edit' && changedFields(a).length" class="mt-1 text-xs text-fg-muted">
+              Changed <span class="font-mono">{{ changedFields(a).join(', ') }}</span>
+            </p>
+            <div v-if="a.facts?.length || a.tags?.length" class="mt-2 flex flex-wrap items-center gap-1.5">
+              <FactPill v-for="(f, i) in a.facts ?? []" :key="i" :label="f.k" :value="f.v" />
+              <TagChip v-for="t in a.tags ?? []" :key="t" :tag="t" />
+            </div>
+            <p v-if="a.remediation" class="mt-2 flex items-start gap-1.5 text-xs text-fg">
+              <Icon name="wrench" :size="12" class="mt-0.5 shrink-0 text-fg-subtle" />
+              <span class="line-clamp-2">{{ a.remediation }}</span>
+            </p>
+          </RouterLink>
+          <!-- Controls, outside the card's own link: the flow that produced this
+               (the one place a bad outcome can be read back to the nodes that
+               made it), and the errors the run recorded — it may still say
+               `finished`, since a flow carries on past a node error. -->
+          <div v-if="errs || a.flowId" class="flex flex-wrap items-center gap-2 border-t border-line px-3 py-2">
+            <RunErrorBadge v-if="errs" :errors="errs" :expanded="openErrors.includes(a.id)" @toggle="toggleErrors(a.id)" />
+            <FlomorphicLink v-if="a.flowId" kind="flow" :id="a.flowId" label="Open flow" class="ml-auto" />
           </div>
-          <div v-if="a.kind === 'run' && a.flowTitle && a.flowTitle !== a.title" class="mt-1 flex items-center gap-1 text-[11px] text-fg-muted">
-            <Icon name="workflow" :size="11" /> {{ a.flowTitle }}
-            <span v-if="a.processId" class="font-mono text-fg-subtle">· process {{ a.processId }}</span>
-          </div>
-          <p v-if="a.error" class="mt-1 truncate text-xs text-danger">{{ a.error }}</p>
-          <p v-else-if="a.description" class="mt-1 line-clamp-2 text-xs text-fg-muted">{{ a.description }}</p>
-          <p v-else-if="a.kind === 'edit' && changedFields(a).length" class="mt-1 text-xs text-fg-muted">
-            Changed <span class="font-mono">{{ changedFields(a).join(', ') }}</span>
-          </p>
-          <div v-if="a.facts?.length || a.tags?.length" class="mt-2 flex flex-wrap items-center gap-1.5">
-            <FactPill v-for="(f, i) in a.facts ?? []" :key="i" :label="f.k" :value="f.v" />
-            <TagChip v-for="t in a.tags ?? []" :key="t" :tag="t" />
-          </div>
-          <p v-if="a.remediation" class="mt-2 flex items-start gap-1.5 text-xs text-fg">
-            <Icon name="wrench" :size="12" class="mt-0.5 shrink-0 text-fg-subtle" />
-            <span class="line-clamp-2">{{ a.remediation }}</span>
-          </p>
-        </RouterLink>
+          <RunErrorList v-if="errs && openErrors.includes(a.id)" :errors="errs" class="border-t border-line bg-surface-2 p-3" />
+        </div>
       </li>
     </ol>
-    <p v-if="runs" class="mt-2 text-[11px] text-fg-subtle">{{ runs }} flow run{{ runs === 1 ? '' : 's' }} on this row.</p>
+    <p v-if="runs" class="mt-2 text-[11px] text-fg-subtle">
+      {{ runs }} flow run{{ runs === 1 ? '' : 's' }} on this row.
+      <span v-if="withErrors" class="text-amber-600 dark:text-amber-400">
+        {{ withErrors }} of them recorded errors while running.
+      </span>
+    </p>
 
     <RunFlowDialog :open="dialog" :subjects="[{ kind, id }]" @close="dialog = false" @started="started" />
   </section>
