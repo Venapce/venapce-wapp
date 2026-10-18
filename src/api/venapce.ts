@@ -54,6 +54,7 @@ import type {
   OperationImportInput,
   OperationPreview,
   OperationRunInput,
+  OperationSettingsPlan,
   PackInput,
 } from './types'
 
@@ -554,6 +555,13 @@ export class VenapceClient {
   }
   async getOperation(id: number | string): Promise<OperationDetail> {
     const { data } = await this.http.get(`/api/operations/${id}`)
+    return data
+  }
+  /** The plugins and node settings profiles an installed operation still needs
+   *  bound in FloMorphic, with its bound flows read back. Its own call because
+   *  it is several FloMorphic round trips. */
+  async getOperationSettings(id: number | string): Promise<OperationSettingsPlan> {
+    const { data } = await this.http.get(`/api/operations/${id}/settings`)
     return data
   }
   /** Resolve + validate a package without installing it (`dryRun`), or install it. */

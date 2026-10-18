@@ -1075,11 +1075,90 @@ export interface OperationImportInput {
   dryRun?: boolean
 }
 
+/** How far one requirement of the settings plan is from being met. */
+export type SettingsNeedStatus = 'ok' | 'unbound' | 'noProfile' | 'notInstalled' | 'unknown'
+
+/** One node of the package whose FloMorphic settings profile the operator has
+ *  to pick. A package carries no profile id and no plugin id — both are
+ *  addresses on one install — and installing a flow overwrites the whole
+ *  document, so these are unbound after every install and re-install. */
+export interface OperationSettingsNeed {
+  flowKey?: string
+  flowTitle?: string
+  /** Set once the flow is installed: the flow to open to bind this node. */
+  flowId?: string
+  ref?: string
+  /** What the node is called on the canvas. */
+  node: string
+  kind?: string
+  action?: string
+  /** What provides the node: the plugin as this FloMorphic registered it, the
+   *  plugin the manifest declared, or the builtin's label. */
+  plugin?: string
+  /** The profile bucket on the install (`ext:<pluginId>`, or the node kind). */
+  nodeUniqId?: string
+  /** The profiles already in that bucket, by title — what the picker offers. */
+  profiles?: string[]
+  /** False for a node that runs unbound; never counted as pending. */
+  required: boolean
+  status: SettingsNeedStatus
+  detail: string
+  /** The profile it is bound to, when it is. */
+  boundTo?: string
+  /** What the manifest's `requires.settings` says the profile must be. */
+  note?: string
+  /** The flow on the FloMorphic canvas (where a profile is picked). */
+  href?: string
+  /** FloMorphic's Node Settings page (where a profile is created). */
+  settingsHref?: string
+}
+
+/** One plugin the package's flows call, as this FloMorphic has it. */
+export interface OperationPluginNeed {
+  name: string
+  actions: string[]
+  /** The actions no plugin here provides. */
+  missing?: string[]
+  /** How many nodes of the package call it. */
+  nodes: number
+  /** This panel's own plugin: it takes no profile. */
+  venapce?: boolean
+  /** A FloMorphic node kind rather than an imported plugin. */
+  builtin?: boolean
+  profiles: number
+  status: SettingsNeedStatus
+  detail: string
+  note?: string
+  repo?: string
+  href?: string
+  settingsHref?: string
+}
+
+/** GET /api/operations/:id/settings, and the `settings` of an import preview:
+ *  the plugins the package needs and the node profiles it cannot carry. */
+export interface OperationSettingsPlan {
+  plugins: OperationPluginNeed[]
+  needs: OperationSettingsNeed[]
+  /** Required needs not satisfied. */
+  pending: number
+  /** Plugins this FloMorphic does not have. */
+  missing: number
+  /** False when FloMorphic could not be asked — every verdict is `unknown`. */
+  known: boolean
+  /** True when the bound flows were read back, so `ok` means bound on the
+   *  canvas; false in the import preview, where nothing is installed yet. */
+  live: boolean
+  panelUrl?: string
+}
+
 /** What a dry-run import answers: the manifest plus the readiness the panel
  *  would show, before anything is written. */
 export interface OperationPreview {
   manifest: OperationManifest
   readiness: OperationReadiness
+  /** The plugins and node settings profiles the package cannot bring with it,
+   *  checked against this FloMorphic. Absent from an older backend. */
+  settings?: OperationSettingsPlan
   /** Set when an operation with the same key is already installed. */
   existing?: Pick<Operation, 'id' | 'version'>
   readme?: string

@@ -26,15 +26,23 @@ import {
 import Icon from '@/components/Icon.vue'
 import ReadinessList from './ReadinessList.vue'
 import ParamsForm from './ParamsForm.vue'
-import type { OperationBundle, OperationDetail, OperationSource } from '@/api/types'
+import SettingsPlanList from './SettingsPlanList.vue'
+import type { OperationBundle, OperationDetail, OperationSettingsPlan, OperationSource } from '@/api/types'
 
 // The import wizard — two steps. SOURCE: where the package is (a GitHub tree
 // / any static folder URL, a folder on disk, or a pasted manifest). REVIEW:
 // what was read — manifest, flows, the readiness pass against this panel's
-// osctrl / plugin state, and the params the operator sets for their estate —
+// osctrl / plugin state, the params the operator sets for their estate, and
+// the plugins / node settings profiles the package cannot bring with it —
 // then Install. Readiness gaps do not block an install (the operation page
 // keeps showing them until fixed); a broken manifest or a missing flow file
 // does.
+//
+// The plugin and settings section comes from the backend (a `dryRun` import),
+// because only it can see this FloMorphic: which plugins are actually
+// installed there, and which settings profiles exist to bind the package's
+// provider nodes to. Everything else on this step is computed in the browser,
+// so the dialog still works — with less certainty — when that call fails.
 const props = defineProps<{ open: boolean; installed: string[] }>()
 const emit = defineEmits<{ close: []; installed: [op: OperationDetail] }>()
 
@@ -66,8 +74,16 @@ const source = ref<OperationSource>({ kind: 'paste' })
 const problems = ref<string[]>([])
 const params = ref<Record<string, unknown>>({})
 
+// -- review: what only the backend can tell us about this FloMorphic
+const plan = ref<OperationSettingsPlan | null>(null)
+const planBusy = ref(false)
+const planError = ref('')
+
 const manifest = computed(() => bundle.value?.manifest ?? null)
-const checks = computed(() =>
+// The browser's own pass. Where the backend answered, its plugin and settings
+// verdicts are the real ones — it can see the install — so those families are
+// dropped here rather than shown twice with a vaguer story.
+const localChecks = computed(() =>
   manifest.value
     ? localReadiness(
         manifest.value,
@@ -81,6 +97,7 @@ const checks = computed(() =>
       )
     : [],
 )
+const checks = computed(() => (plan.value ? localChecks.value.filter((c) => c.kind !== 'plugin' && c.kind !== 'settings') : localChecks.value))
 const summary = computed(() => readinessSummary(checks.value))
 const alreadyInstalled = computed(() => !!manifest.value && props.installed.includes(manifest.value.id))
 const canInstall = computed(() => !!manifest.value && problems.value.length === 0 && !busy.value)
@@ -94,6 +111,8 @@ function reset() {
   bundle.value = null
   problems.value = []
   params.value = {}
+  plan.value = null
+  planError.value = ''
 }
 watch(
   () => props.open,
@@ -107,6 +126,26 @@ function review(b: OperationBundle, src: OperationSource, errs: string[]) {
   // Seed the form with the defaults so the operator sees what will apply.
   params.value = Object.fromEntries(Object.entries(effectiveParams(b.manifest)).filter(([, v]) => v !== undefined))
   step.value = 'review'
+  void loadPlan()
+}
+
+/** Ask the backend what this FloMorphic makes of the package: the plugins it
+ *  has, and the profiles its provider nodes could be bound to. Nothing is
+ *  written — it is a dry run — and a failure only costs the section. */
+async function loadPlan() {
+  if (!bundle.value) return
+  planBusy.value = true
+  planError.value = ''
+  try {
+    const res = await conn.client.previewOperation({ bundle: bundle.value, source: source.value, params: params.value })
+    plan.value = res.settings ?? null
+    if (!res.settings) planError.value = 'This backend does not report plugin and node-settings requirements yet.'
+  } catch (e) {
+    plan.value = null
+    planError.value = apiErr(e)
+  } finally {
+    planBusy.value = false
+  }
 }
 
 // ---- URL ----
@@ -410,6 +449,37 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
             <div class="rounded-md border border-line p-3">
               <ParamsForm v-model="params" :specs="manifest.params" />
             </div>
+          </section>
+
+          <!-- plugins & node settings: what no package can carry -->
+          <section class="mb-4">
+            <div class="mb-1 flex flex-wrap items-center gap-2">
+              <p class="label !mb-0">Plugins &amp; node settings — what this FloMorphic has to provide</p>
+              <button v-if="!planBusy" class="icon-btn-plain ml-auto text-[11px]" title="Check this FloMorphic again" @click="loadPlan">
+                <Icon name="refresh" :size="12" /> <span class="ml-1">re-check</span>
+              </button>
+            </div>
+            <p v-if="planBusy" class="flex items-center gap-1.5 text-xs text-fg-subtle">
+              <Icon name="loader" :size="13" class="animate-spin" /> Asking FloMorphic which plugins and profiles it has…
+            </p>
+            <template v-else-if="plan">
+              <p v-if="plan.pending || plan.missing" class="mb-2 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning">
+                <strong>You will have to finish this in FloMorphic.</strong>
+                <template v-if="plan.missing">
+                  {{ plan.missing }} plugin{{ plan.missing === 1 ? '' : 's' }} this package calls {{ plan.missing === 1 ? 'is' : 'are' }} not
+                  installed there{{ plan.pending ? ', and ' : '.' }}
+                </template>
+                <template v-if="plan.pending">
+                  {{ plan.pending }} node{{ plan.pending === 1 ? '' : 's' }} must be bound to a settings profile once the flows are installed —
+                  the package carries no credentials, and a re-install resets those bindings.
+                </template>
+              </p>
+              <SettingsPlanList :plan="plan" />
+            </template>
+            <p v-else class="rounded-md bg-surface-2 px-3 py-2 text-[11px] text-fg-muted">
+              {{ planError || 'Could not read this FloMorphic.' }} The package still installs; its plugin and profile requirements are then
+              listed on the operation page.
+            </p>
           </section>
 
           <!-- readiness -->

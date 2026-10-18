@@ -17,8 +17,9 @@ import RunErrorList from '@/components/pipeline/RunErrorList.vue'
 import ActivityTimeline from '@/components/pipeline/ActivityTimeline.vue'
 import ReadinessList from '@/components/operations/ReadinessList.vue'
 import ParamsForm from '@/components/operations/ParamsForm.vue'
+import SettingsPlanList from '@/components/operations/SettingsPlanList.vue'
 import FlowPickerDialog from '@/components/operations/FlowPickerDialog.vue'
-import type { Activity, FlowSummary, OperationDetail, OperationFlowState } from '@/api/types'
+import type { Activity, FlowSummary, OperationDetail, OperationFlowState, OperationSettingsPlan } from '@/api/types'
 
 // One operation: the manifest it was installed from, the readiness checklist
 // against this estate, its parameters, and its flows — each either bound to
@@ -40,6 +41,25 @@ const params = ref<Record<string, unknown>>({})
 const paramsDirty = ref(false)
 const picker = ref<OperationFlowState | null>(null)
 const timeline = ref<InstanceType<typeof ActivityTimeline> | null>(null)
+
+// The plugins and node settings profiles the package cannot carry, read back
+// from FloMorphic: which provider nodes are bound and which are still waiting.
+// Its own call — it reads every bound flow — so the page paints without it.
+const plan = ref<OperationSettingsPlan | null>(null)
+const planBusy = ref(false)
+const planError = ref('')
+async function loadPlan() {
+  planBusy.value = true
+  planError.value = ''
+  try {
+    plan.value = await conn.client.getOperationSettings(props.id)
+  } catch (e) {
+    plan.value = null
+    planError.value = apiErr(e)
+  } finally {
+    planBusy.value = false
+  }
+}
 
 // Where the FloMorphic panel is, for every "open in FloMorphic" on this page.
 // It comes from Settings → FloMorphic; until someone sets it there, the link
@@ -114,9 +134,18 @@ async function act(key: string, fn: () => Promise<OperationDetail | void>, done?
 
 const saveParams = () =>
   act('params', () => conn.client.saveOperationParams(props.id, params.value), 'Parameters saved — re-install the flows for them to take effect in FloMorphic.')
-const installFlow = (f: OperationFlowState) =>
-  act(f.key, () => conn.client.installOperationFlow(props.id, f.key), `"${f.title || f.key}" installed into FloMorphic.`)
-const update = () => act('update', () => conn.client.updateOperation(props.id), 'Package re-read from its source.')
+// Installing writes the whole flow document, so every node's settings profile
+// comes back unbound — the plan is re-read to say which ones, and the notice
+// says it outright.
+const installFlow = async (f: OperationFlowState) => {
+  await act(f.key, () => conn.client.installOperationFlow(props.id, f.key), `"${f.title || f.key}" installed into FloMorphic — check its node settings below.`)
+  await loadPlan()
+}
+// A newer package can add nodes that need a profile, so the plan is re-read.
+const update = async () => {
+  await act('update', () => conn.client.updateOperation(props.id), 'Package re-read from its source.')
+  await loadPlan()
+}
 const pullFlow = (f: OperationFlowState) =>
   window.confirm(
     `Replace the package's "${f.file}" with the flow as it is on the FloMorphic canvas now? Any \${param.…} placeholders in the file are replaced by the canvas values.`,
@@ -139,7 +168,7 @@ function pickFlow(flow: FlowSummary) {
   const f = picker.value
   picker.value = null
   if (!f) return
-  act(f.key, () => conn.client.linkOperationFlow(props.id, f.key, flow.id), `"${f.title || f.key}" linked to ${flow.title}.`)
+  void act(f.key, () => conn.client.linkOperationFlow(props.id, f.key, flow.id), `"${f.title || f.key}" linked to ${flow.title}.`).then(loadPlan)
 }
 
 async function run(f: OperationFlowState) {
@@ -196,9 +225,16 @@ function started(list: Activity[]) {
   if (list.length) load(true)
 }
 
-watch(() => props.id, () => load())
+watch(
+  () => props.id,
+  () => {
+    load()
+    loadPlan()
+  },
+)
 onMounted(() => {
   load()
+  loadPlan()
   if (!flo.loaded) flo.loadSettings()
 })
 </script>
@@ -368,6 +404,24 @@ onMounted(() => {
             </ul>
             <p v-if="entry.length === 0" class="mt-2 text-[11px] text-fg-subtle">
               This operation has no entry flow: its flows run on pipeline rows (pick them from a row's <em>Run flow</em>).
+            </p>
+          </section>
+
+          <!-- plugins & node settings: the half of the setup that lives in
+               FloMorphic, not in the package -->
+          <section class="card p-4">
+            <div class="mb-2 flex flex-wrap items-center gap-2">
+              <h2 class="label !mb-0 flex items-center gap-1.5"><Icon name="sliders" :size="13" /> Plugins &amp; node settings</h2>
+              <span v-if="plan && plan.pending" class="chip bg-warning-soft text-warning">{{ plan.pending }} to bind</span>
+              <span v-else-if="plan && plan.needs.length" class="chip bg-success-soft text-success">all bound</span>
+              <button class="icon-btn-plain ml-auto text-[11px]" title="Read the bound flows back from FloMorphic" :disabled="planBusy" @click="loadPlan">
+                <Icon name="refresh" :size="12" :class="planBusy && 'animate-spin'" /> <span class="ml-1">re-check</span>
+              </button>
+            </div>
+            <p v-if="planBusy && !plan" class="text-xs text-fg-subtle">Reading the flows back from FloMorphic…</p>
+            <SettingsPlanList v-else-if="plan" :plan="plan" />
+            <p v-else class="rounded-md bg-surface-2 px-3 py-2 text-xs text-fg-muted">
+              {{ planError || 'FloMorphic could not be read.' }}
             </p>
           </section>
 
