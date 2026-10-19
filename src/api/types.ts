@@ -868,8 +868,28 @@ export type ActivityInput = Partial<
 export interface FlowSummary {
   id: string
   title: string
+  /** The flow's labels on FloMorphic. An operation stamps its own on the flows
+   *  it installs, which is what the picker's operation filter matches. */
+  tags?: string[]
   createdAt?: number
   updatedAt?: number
+}
+
+/** GET /api/flows/tags — the run picker's operation filter menu: which
+ *  operations are installed and the labels each one stamped on its flows. */
+export interface FlowTagFacets {
+  operations: FlowTagOperation[]
+  /** Every label in use across installed operations, for filtering by a bare
+   *  label rather than by a whole operation. */
+  tags: string[]
+}
+
+export interface FlowTagOperation {
+  id: number
+  name: string
+  /** The package's manifest id (its slug). */
+  slug: string
+  tags: string[]
 }
 
 /** POST /api/activities/run — send one or more rows through a flow. */
@@ -926,6 +946,8 @@ export interface OperationFlowSpec {
   subject?: ('stage' | 'finding' | 'issue')[]
   schedule?: string
   writes?: ('stage' | 'findings' | 'issues' | 'activities')[]
+  /** Labels for this one flow, on top of the package's `flowTags`. */
+  tags?: string[]
 }
 
 export interface OperationPluginReq {
@@ -1194,6 +1216,10 @@ export interface PackInput {
   version?: string
   description?: string
   tags?: string[]
+  /** Labels stamped on every flow the package installs — what the Run-flow
+   *  picker's operation filter matches. Left empty, the manifest records
+   *  `operation:<id>` so the package is filterable anyway. */
+  flowTags?: string[]
   scale?: OperationScale[]
   authors?: string[]
   license?: string

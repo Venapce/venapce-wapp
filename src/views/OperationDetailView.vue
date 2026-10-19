@@ -146,6 +146,21 @@ const update = async () => {
   await act('update', () => conn.client.updateOperation(props.id), 'Package re-read from its source.')
   await loadPlan()
 }
+// Labels are stamped when a flow is installed, so an operation installed before
+// flow labels existed (or one whose manifest labels changed since) has bound
+// flows the Run-flow picker's filter cannot find. This relabels them in place —
+// no graph is re-pushed, so nothing edited on the canvas is lost.
+const relabel = () =>
+  act('relabel', async () => {
+    const res = await conn.client.relabelOperationFlows(props.id)
+    const failed = Object.keys(res.failed ?? {})
+    error.value = failed.length ? `Could not label: ${failed.join(', ')}.` : ''
+    flash(
+      res.labelled === 0
+        ? 'No bound flow to label yet — install a flow first.'
+        : `Labelled ${res.labelled} flow${res.labelled === 1 ? '' : 's'} with ${res.labels.join(', ')}. The Run-flow picker can filter by this operation now.`,
+    )
+  })
 const pullFlow = (f: OperationFlowState) =>
   window.confirm(
     `Replace the package's "${f.file}" with the flow as it is on the FloMorphic canvas now? Any \${param.…} placeholders in the file are replaced by the canvas values.`,
@@ -292,6 +307,16 @@ onMounted(() => {
             <div class="mb-3 flex items-center gap-2">
               <h2 class="label !mb-0 flex items-center gap-1.5"><Icon name="workflow" :size="13" /> {{ multiStep ? 'Mission steps' : 'Workflows' }}</h2>
               <span class="chip">{{ bound }}/{{ op.flows.length }} bound</span>
+              <button
+                v-if="bound"
+                class="icon-btn-plain text-[11px]"
+                title="Stamp this operation's labels on its bound flows, so a row's Run-flow picker can filter to them. Only the labels are written — no graph is re-pushed."
+                :disabled="!!busy"
+                @click="relabel"
+              >
+                <Icon :name="busy === 'relabel' ? 'loader' : 'tag'" :size="12" :class="busy === 'relabel' && 'animate-spin'" />
+                <span class="ml-1">label flows</span>
+              </button>
               <button class="icon-btn-plain ml-auto text-[11px]" :title="panelUrl ? `FloMorphic panel: ${panelUrl}` : 'Set the FloMorphic panel address'" @click="changePanelUrl">
                 <Icon name="external" :size="12" /> <span class="ml-1">{{ panelUrl ? 'panel' : 'set panel address' }}</span>
               </button>

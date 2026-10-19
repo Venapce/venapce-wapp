@@ -37,9 +37,21 @@ const idTouched = ref(false)
 const version = ref('1.0.0')
 const description = ref('')
 const tags = ref<string[]>([])
+// The labels stamped on every flow this package installs into FloMorphic —
+// what the Run-flow picker's operation filter matches, so an operator applying
+// a flow to a row sees this operation's flows instead of every flow on a
+// shared canvas. Kept apart from `tags`, which classify the package itself for
+// a catalog: "demo" belongs on the package card, not on the picker's filter.
+// Prefilled with the package's own id (what the backend would default to
+// anyway) so the author sees the label they are shipping.
+const flowTags = ref<string[]>([])
+const flowTagsTouched = ref(false)
 const scale = ref<OperationScale[]>([])
 const readme = ref('')
-const rows = ref<PackFlowInput[]>([])
+// `tags` is required on a row (the editor binds a TagsField to it) and optional
+// on the wire, so the row type tightens it and input() drops it when empty.
+type PackRow = PackFlowInput & { tags: string[] }
+const rows = ref<PackRow[]>([])
 
 const ROLES: OperationFlowRole[] = ['entry', 'on-row', 'helper']
 const SUBJECTS = ['stage', 'finding', 'issue'] as const
@@ -87,6 +99,7 @@ function describe() {
     step: i + 1,
     subject: i === 0 ? undefined : ['stage'],
     writes: i === 0 ? ['stage'] : ['activities'],
+    tags: [],
   }))
   if (!name.value) name.value = picked.value.length === 1 ? picked.value[0]!.title : ''
   step.value = 'describe'
@@ -96,6 +109,11 @@ watch(name, (n) => {
   if (!idTouched.value) id.value = slug(n)
 })
 
+// The default flow label follows the id until the author sets their own.
+watch(id, (v) => {
+  if (!flowTagsTouched.value) flowTags.value = v ? [`operation:${v}`] : []
+})
+
 function input(): PackInput {
   return {
     id: id.value.trim() || undefined,
@@ -103,6 +121,7 @@ function input(): PackInput {
     version: version.value.trim() || '1.0.0',
     description: description.value.trim() || undefined,
     tags: tags.value.length ? tags.value : undefined,
+    flowTags: flowTags.value.length ? flowTags.value : undefined,
     scale: scale.value.length ? scale.value : undefined,
     readme: readme.value.trim() || undefined,
     flows: rows.value.map((r) => ({
@@ -111,6 +130,7 @@ function input(): PackInput {
       description: r.description?.trim() || undefined,
       schedule: r.schedule?.trim() || undefined,
       subject: r.role === 'on-row' ? r.subject : undefined,
+      tags: r.tags?.length ? r.tags : undefined,
     })),
   }
 }
@@ -168,6 +188,8 @@ watch(
     version.value = '1.0.0'
     description.value = ''
     tags.value = []
+    flowTags.value = []
+    flowTagsTouched.value = false
     scale.value = []
     readme.value = ''
     error.value = ''
@@ -238,8 +260,21 @@ watch(
               <textarea v-model="description" class="field min-h-[4rem]" placeholder="One paragraph. It opens the README and the operation card."></textarea>
             </div>
             <div>
-              <label class="label">Tags</label>
+              <label class="label">Tags <span class="font-normal text-fg-subtle">— classify the package</span></label>
               <TagsField v-model="tags" placeholder="linux, exposure…" />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="label">
+                Flow labels
+                <span class="font-normal text-fg-subtle">— stamped on every flow this package installs</span>
+              </label>
+              <TagsField v-model="flowTags" placeholder="operation:fleet-audit…" @update:model-value="flowTagsTouched = true" />
+              <p class="mt-1 text-[11px] text-fg-subtle">
+                What the <span class="font-medium">Run a flow on this row</span> picker filters by, so an operator applying one of
+                these flows sees this operation's rather than every flow on the canvas. They can always clear the filter and see
+                them all. Leave it empty and the install uses
+                <code class="font-mono">operation:{{ id || slug(name) || 'id' }}</code>.
+              </p>
             </div>
             <div>
               <label class="label">Estate</label>
@@ -282,6 +317,13 @@ watch(
                   </button>
                 </div>
                 <input v-model="r.key" class="field py-1 font-mono text-xs" placeholder="key (slug)" />
+              </div>
+              <!-- Labels for this one flow, on top of the package's. For an
+                   operation that ships more than one kind of flow — a stage
+                   sweep and a finding review want telling apart inside it. -->
+              <div class="flex items-start gap-2">
+                <Icon name="tag" :size="12" class="mt-1.5 shrink-0 text-fg-subtle" />
+                <TagsField v-model="r.tags" class="flex-1" placeholder="extra labels for this flow (optional)" />
               </div>
               <input v-model="r.description" class="field py-1 text-xs" placeholder="What this flow does, what it reads, what it writes (goes into the README)" />
               <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-fg-muted">

@@ -65,6 +65,14 @@
       },
       "description": "Free classification (linux, web, exposure, compliance \u2026). Rows the flows write usually carry a subset of these."
     },
+    "flowTags": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      },
+      "description": "Labels stamped on EVERY flow this package installs into FloMorphic. They are what the Run-flow picker filters by, so an operator applying a flow to a row sees this operation's handful instead of every flow on a shared canvas. Distinct from `tags`, which classify the package itself for a catalog. Omit them and the install uses `operation:<id>`, so a package is always filterable; the operator can always clear the filter and see every flow."
+    },
     "scale": {
       "type": "array",
       "uniqueItems": true,
@@ -207,6 +215,14 @@
               ]
             },
             "description": "Pipeline tables the flow writes to."
+          },
+          "tags": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            },
+            "description": "Labels for this one flow, on top of the package's `flowTags` \u2014 for narrowing inside an operation that ships several kinds of flow (a stage sweep and a finding review, say). Normalized like every tag: lower-cased, de-duplicated, no commas."
           }
         }
       }

@@ -70,6 +70,15 @@ watch(
             <button class="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left" @click="emit('pick', f)">
               <Icon name="workflow" :size="14" class="shrink-0 text-fg-subtle" />
               <span class="min-w-0 flex-1 truncate text-sm text-fg">{{ f.title }}</span>
+              <!-- A flow's labels say which operation already claims it, which
+                   is worth seeing before binding this one to another. Linking
+                   adds this operation's labels to whatever is here. -->
+              <span v-if="f.tags?.length" class="hidden shrink-0 gap-1 sm:flex">
+                <span v-for="t in f.tags.slice(0, 2)" :key="t" class="rounded-full bg-surface-2 px-1.5 py-0.5 text-[10px] text-fg-muted">
+                  {{ t }}
+                </span>
+                <span v-if="f.tags.length > 2" class="text-[10px] text-fg-subtle" :title="f.tags.join(', ')">+{{ f.tags.length - 2 }}</span>
+              </span>
               <span class="shrink-0 font-mono text-[10px] text-fg-subtle">{{ f.id }}</span>
             </button>
             <!-- Bind the right one: two flows of the same name are told apart

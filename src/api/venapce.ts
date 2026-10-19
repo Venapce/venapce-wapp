@@ -46,6 +46,7 @@ import type {
   ActivityInput,
   ActivityQuery,
   FlowSummary,
+  FlowTagFacets,
   RunFlowInput,
   RunFlowResult,
   Operation,
@@ -488,9 +489,27 @@ export class VenapceClient {
   // Every change to a pipeline row is an activity on it; a `run` is a
   // FloMorphic flow executed on the row, completed in the background.
 
-  /** The FloMorphic flows an operator can run a row through. */
-  async listFlows(search = ''): Promise<FlowSummary[]> {
-    const { data } = await this.http.get('/api/flows', { params: search ? { search } : {} })
+  /**
+   * The FloMorphic flows an operator can run a row through.
+   *
+   * `tags` is a match-ANY label filter applied by FloMorphic, not here: pass an
+   * operation's labels to see only its flows, pass nothing for every flow. A
+   * filter narrows what FloMorphic returns rather than the 200-row page the
+   * API already truncated, so an operation's flows cannot fall off the end.
+   */
+  async listFlows(search = '', tags: string[] = []): Promise<FlowSummary[]> {
+    const params: Record<string, string> = {}
+    if (search) params.search = search
+    if (tags.length) params.tags = tags.join(',')
+    const { data } = await this.http.get('/api/flows', { params })
+    return data
+  }
+
+  /** The run picker's operation filter menu — installed operations and the
+   *  labels each stamped on its flows. Derived from installed packages, so it
+   *  answers even when FloMorphic itself is unreachable. */
+  async listFlowTags(): Promise<FlowTagFacets> {
+    const { data } = await this.http.get('/api/flows/tags')
     return data
   }
   async listActivities(q: ActivityQuery = {}): Promise<Activity[]> {
@@ -588,6 +607,17 @@ export class VenapceClient {
   /** Push one manifest flow (params substituted) into FloMorphic and bind the key to the created flow. */
   async installOperationFlow(id: number | string, flowKey: string): Promise<OperationDetail> {
     const { data } = await this.http.post(`/api/operations/${id}/flows/${encodeURIComponent(flowKey)}/install`)
+    return data
+  }
+  /**
+   * Stamp this operation's flow labels on the flows it is already bound to,
+   * without re-pushing their graphs. Labels are applied at install time, so a
+   * package installed before labels existed — or one whose `flowTags` changed
+   * since — has bound flows the Run-flow picker's filter cannot see. Merges,
+   * so a flow's own labels survive.
+   */
+  async relabelOperationFlows(id: number | string): Promise<{ labelled: number; labels: string[]; failed: Record<string, string> }> {
+    const { data } = await this.http.post(`/api/operations/${id}/flows/relabel`)
     return data
   }
   /** Bind a manifest flow key to a flow that already exists in FloMorphic. */
