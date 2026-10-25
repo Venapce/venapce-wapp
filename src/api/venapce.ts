@@ -10,6 +10,10 @@ import type {
   DatasetDetail,
   DatasetSummary,
   ExamplesStatus,
+  PreferencesBundle,
+  PreferencesImportMode,
+  PreferencesReport,
+  PreferencesSection,
   FlomorphicAccessResult,
   FlomorphicCheckResult,
   FlomorphicConnectResult,
@@ -45,6 +49,7 @@ import type {
   ActivityDetail,
   ActivityInput,
   ActivityQuery,
+  FlowEntryView,
   FlowSummary,
   FlowTagFacets,
   RunFlowInput,
@@ -126,6 +131,41 @@ export class VenapceClient {
   /** Trigger a background load of Superset's example datasets. Idempotent. */
   async loadExamples(): Promise<ExamplesStatus> {
     const { data } = await this.http.post('/api/settings/superset/examples', {})
+    return data
+  }
+
+  // ---- preferences in and out ----
+  // The configuration an operator builds, as one JSON file: the charts, the
+  // dashboards they sit on, the saved views. No pipeline rows, no credentials
+  // — see types.ts.
+
+  /** This install's preferences. `sections` narrows what comes back; empty
+   *  means every section. */
+  async exportPreferences(sections: PreferencesSection[] = [], label = ''): Promise<PreferencesBundle> {
+    const params: Record<string, string> = {}
+    if (sections.length) params.include = sections.join(',')
+    if (label) params.label = label
+    const { data } = await this.http.get('/api/settings/preferences', { params })
+    return data
+  }
+
+  /**
+   * Apply a preferences file.
+   *
+   * `dryRun` applies the whole file inside a transaction and rolls it back, so
+   * the report is the real one — same conflicts, same skips — with nothing
+   * kept. That is what the panel shows before anyone commits to the import.
+   */
+  async importPreferences(
+    bundle: PreferencesBundle,
+    opts: { include?: PreferencesSection[]; mode?: PreferencesImportMode; dryRun?: boolean } = {},
+  ): Promise<PreferencesReport> {
+    const { data } = await this.http.post('/api/settings/preferences/import', {
+      bundle,
+      include: opts.include?.length ? opts.include : undefined,
+      mode: opts.mode ?? 'merge',
+      dryRun: !!opts.dryRun,
+    })
     return data
   }
 
@@ -512,6 +552,30 @@ export class VenapceClient {
     const { data } = await this.http.get('/api/flows/tags')
     return data
   }
+
+  /**
+   * The input one flow asks for before it runs, resolved for a launch: the form
+   * its designer declared, the context path the answers land at, and the values
+   * the fields should start at.
+   *
+   * `entry: null` is the answer for a flow that asks for nothing — run it the
+   * way it always ran. The resolve is FloMorphic's, not this app's, so the
+   * dialog's fields start where an agent and the designer's own run button
+   * start them.
+   *
+   * `subject` asks for `last` — what the previous run of this flow was given —
+   * scoped to that row's own history first. Pass it when a dialog is launching
+   * one row; the answer falls back to the flow's last run anywhere.
+   */
+  async getFlowEntry(id: string, subject?: { kind: string; id: number | string }): Promise<FlowEntryView> {
+    const params: Record<string, string> = {}
+    if (subject) {
+      params.subjectKind = subject.kind
+      params.subjectId = String(subject.id)
+    }
+    const { data } = await this.http.get(`/api/flows/${encodeURIComponent(id)}/entry`, { params })
+    return data
+  }
   async listActivities(q: ActivityQuery = {}): Promise<Activity[]> {
     const params: Record<string, string> = {}
     if (q.subjectKind) params.subjectKind = q.subjectKind
@@ -581,12 +645,12 @@ export class VenapceClient {
    *  it is several FloMorphic round trips. */
   async getOperationSettings(id: number | string): Promise<OperationSettingsPlan> {
     const { data } = await this.http.get(`/api/operations/${id}/settings`)
-    return data
+    return settingsPlan(data)
   }
   /** Resolve + validate a package without installing it (`dryRun`), or install it. */
   async previewOperation(input: OperationImportInput): Promise<OperationPreview> {
     const { data } = await this.http.post('/api/operations/import', { ...input, dryRun: true })
-    return data
+    return { ...data, settings: data.settings ? settingsPlan(data.settings) : undefined }
   }
   async importOperation(input: OperationImportInput): Promise<OperationDetail> {
     const { data } = await this.http.post('/api/operations/import', { ...input, dryRun: false })
@@ -668,6 +732,17 @@ export class VenapceClient {
   async pullOperationFlow(id: number | string, flowKey: string): Promise<OperationDetail> {
     const { data } = await this.http.post(`/api/operations/${id}/flows/${encodeURIComponent(flowKey)}/pull`)
     return data
+  }
+}
+
+/** A settings plan whose lists are lists. An older backend marshals an empty
+ *  slice as `null` — a plugin grouped from builtin nodes has no action names —
+ *  and the plan is rendered straight, so a null there takes the view down. */
+function settingsPlan(p: OperationSettingsPlan): OperationSettingsPlan {
+  return {
+    ...p,
+    plugins: (p?.plugins ?? []).map((pl) => ({ ...pl, actions: pl.actions ?? [], missing: pl.missing ?? [] })),
+    needs: (p?.needs ?? []).map((n) => ({ ...n, profiles: n.profiles ?? [] })),
   }
 }
 

@@ -372,6 +372,23 @@ onMounted(() => {
                     <p v-else-if="f.compileError && !f.compileError.includes('backend initial')" class="mt-1 flex items-start gap-1.5 text-[11px] text-warning">
                       <Icon name="alertCircle" :size="11" class="mt-0.5 shrink-0" /> <span>Compile check: {{ f.compileError }}</span>
                     </p>
+                    <!-- Installed, and unbound in places: more than one plugin on FloMorphic
+                         serves these nodes' action, so its import held them back rather than bind
+                         whichever answered first and leave the flow looking settled. -->
+                    <p v-if="f.unboundNodes?.length" class="mt-1 flex items-start gap-1.5 text-[11px] text-warning">
+                      <Icon name="alertCircle" :size="11" class="mt-0.5 shrink-0" />
+                      <span>
+                        {{ f.unboundNodes.length }}
+                        {{ f.unboundNodes.length === 1 ? 'node needs' : 'nodes need' }} a plugin picked — more than
+                        one plugin provides what {{ f.unboundNodes.length === 1 ? 'it calls' : 'they call' }}:
+                        <span v-for="(u, i) in f.unboundNodes" :key="u.ref + u.action">
+                          <code class="font-mono">{{ u.title || u.ref }}</code>
+                          ({{ u.action }} → {{ u.choices.join(' / ') }}){{ i < f.unboundNodes.length - 1 ? ', ' : '' }}
+                        </span>
+                        — open the flow and pick the plugin on each node.
+                        <FlomorphicLink v-if="f.flowId" kind="flow" :id="f.flowId" />
+                      </span>
+                    </p>
                     <p v-if="f.lastRun" class="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-subtle">
                       last run
                       <Badge kind="activity-status" :value="f.lastRun.status" />
@@ -438,7 +455,7 @@ onMounted(() => {
             <div class="mb-2 flex flex-wrap items-center gap-2">
               <h2 class="label !mb-0 flex items-center gap-1.5"><Icon name="sliders" :size="13" /> Plugins &amp; node settings</h2>
               <span v-if="plan && plan.pending" class="chip bg-warning-soft text-warning">{{ plan.pending }} to bind</span>
-              <span v-else-if="plan && plan.needs.length" class="chip bg-success-soft text-success">all bound</span>
+              <span v-else-if="plan && plan.needs?.length" class="chip bg-success-soft text-success">all bound</span>
               <button class="icon-btn-plain ml-auto text-[11px]" title="Read the bound flows back from FloMorphic" :disabled="planBusy" @click="loadPlan">
                 <Icon name="refresh" :size="12" :class="planBusy && 'animate-spin'" /> <span class="ml-1">re-check</span>
               </button>

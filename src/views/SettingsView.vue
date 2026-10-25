@@ -8,6 +8,7 @@ import SupersetSettingsCard from '@/components/settings/SupersetSettingsCard.vue
 import DemoDataCard from '@/components/settings/DemoDataCard.vue'
 import FlomorphicSettingsCard from '@/components/settings/FlomorphicSettingsCard.vue'
 import OsctrlSettingsCard from '@/components/settings/OsctrlSettingsCard.vue'
+import PreferencesCard from '@/components/settings/PreferencesCard.vue'
 
 const conn = useConnectionStore()
 const osctrl = useOsctrlStore()
@@ -45,6 +46,10 @@ onMounted(() => {
 
       <!-- Fleet manager behind the Nodes area -->
       <OsctrlSettingsCard />
+
+      <!-- Carry this install's configuration to the next one: the charts,
+           their dashboards, the saved views. -->
+      <PreferencesCard />
 
       <!-- Advanced: add external database connections (ClickHouse, Postgres, …). -->
       <section class="rounded-lg border border-line bg-surface p-5">

@@ -36,13 +36,13 @@ const GLYPH: Record<SettingsNeedStatus, { icon: string; cls: string }> = {
 // this list needs every node in it.
 const RANK: Record<SettingsNeedStatus, number> = { notInstalled: 0, noProfile: 1, unbound: 2, unknown: 3, ok: 4 }
 const needs = computed(() =>
-  [...props.plan.needs].sort((a, b) => {
+  [...(props.plan.needs ?? [])].sort((a, b) => {
     const ra = RANK[a.status] + (a.required ? 0 : 5)
     const rb = RANK[b.status] + (b.required ? 0 : 5)
     return ra - rb
   }),
 )
-const pendingPlugins = computed(() => props.plan.plugins.filter((p) => p.status === 'notInstalled'))
+const pendingPlugins = computed(() => (props.plan.plugins ?? []).filter((p) => p.status === 'notInstalled'))
 
 /** The flow to open for a need: the backend's link when the panel address is
  *  known to it, else this browser's own. */
@@ -65,10 +65,10 @@ function settingsHref(n: { settingsHref?: string }): string {
     </p>
 
     <!-- what the flows need, as this FloMorphic has it -->
-    <template v-if="plan.plugins.length">
+    <template v-if="plan.plugins?.length">
       <p class="label">Plugins the flows call</p>
       <ul class="divide-y divide-line rounded-md border border-line">
-        <li v-for="p in plan.plugins" :key="p.name" class="flex items-start gap-2.5 px-3 py-2">
+        <li v-for="p in plan.plugins ?? []" :key="p.name" class="flex items-start gap-2.5 px-3 py-2">
           <Icon :name="GLYPH[p.status].icon" :size="15" :class="[GLYPH[p.status].cls, 'mt-0.5 shrink-0']" />
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-1.5 text-sm text-fg">
@@ -82,7 +82,7 @@ function settingsHref(n: { settingsHref?: string }): string {
               </span>
             </div>
             <p class="mt-0.5 break-words text-xs text-fg-muted">{{ p.detail }}</p>
-            <p v-if="p.actions.length" class="mt-0.5 flex flex-wrap gap-1">
+            <p v-if="p.actions?.length" class="mt-0.5 flex flex-wrap gap-1">
               <code v-for="a in p.actions" :key="a" class="rounded bg-surface-2 px-1 font-mono text-[10px]" :class="p.missing?.includes(a) ? 'text-danger' : 'text-fg-subtle'">{{ a }}</code>
             </p>
           </div>
@@ -151,7 +151,7 @@ function settingsHref(n: { settingsHref?: string }): string {
       </p>
     </template>
 
-    <p v-else-if="!plan.plugins.length" class="text-xs text-fg-subtle">
+    <p v-else-if="!plan.plugins?.length" class="text-xs text-fg-subtle">
       Nothing to configure: no node of this package reaches a provider that needs its own credentials.
     </p>
   </div>

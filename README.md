@@ -41,7 +41,7 @@ Senses (osquery agents, plugins)  →  FloMorphic workflows  →  Venapce backen
 | **Stage** | The pipeline inbox: raw, un-triaged rows every pipeline feeds in. A FloMorphic flow routes each (`pending` / `promoted` / `held` / `dropped`) — to a finding, straight to an issue, or nowhere. |
 | **Findings** | What a process concluded from data: an observation with a severity, confidence, category and target, still to be validated. Every finding carries its provenance. Validated findings are promoted to issues. |
 | **Issues** | The single issues table — what needs validating, fixing or acting on. Every row carries **tags**; a saved sub-view is just a named tag filter. FloMorphic produces and advances the rows. |
-| **Settings** | Configure the Superset and osctrl connections (stored & encrypted server-side, login probed) and optionally load Superset's demo datasets. |
+| **Settings** | Configure the Superset and osctrl connections (stored & encrypted server-side, login probed), optionally load Superset's demo datasets, and carry this install's **preferences** — charts, dashboards, saved views — out to a file or in from one. |
 
 > The Nodes and pipeline views fall back to a built-in **sample data** set (with a
 > banner) when the backend isn't reachable, so the UI stays reviewable during development.

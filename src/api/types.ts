@@ -871,8 +871,109 @@ export interface FlowSummary {
   /** The flow's labels on FloMorphic. An operation stamps its own on the flows
    *  it installs, which is what the picker's operation filter matches. */
   tags?: string[]
+  /** The flow's non-graph choices — today the entry form it asks to have
+   *  filled in before it runs. Carried on the list so the picker can mark the
+   *  flows that want input; the form's starting values are resolved by
+   *  `getFlowEntry`, which is the one thing that decides them. */
+  preferences?: FlowPreferences
   createdAt?: number
   updatedAt?: number
+}
+
+/** A flow's preferences. One field today; an object so the next flow-level
+ *  preference does not change the shape again. */
+export interface FlowPreferences {
+  entry?: FlowEntryForm
+}
+
+/**
+ * The input a flow asks for before it runs.
+ *
+ * A flow designer declares it once on the flow (FloMorphic's
+ * `preferences.entry`) instead of wiring a node after the start node whose only
+ * job was to seed the context — and a launcher renders it. That is what turned
+ * the run dialog's bare "extra input JSON" box, which only worked if the
+ * operator already knew the shape the flow reads, into a form the flow itself
+ * describes.
+ */
+export interface FlowEntryForm {
+  title?: string
+  description?: string
+  /**
+   * The entry document. `schema` is written in either of two ways and
+   * `entryIsSchema` (lib/flowEntry) tells them apart: a JSON Schema, built
+   * into typed controls, or a plain JSON object of the values to seed, shown as
+   * a flat key/value table and seeded as written. `ui` is an optional JSON
+   * Forms UI schema carried for the designer's renderer; venapce builds its
+   * controls from the schema itself.
+   */
+  form: { schema?: Record<string, unknown>; ui?: Record<string, unknown> }
+  /** The ONE context location the answers are written to — `$._entry` by
+   *  default. Nothing else in the context document is touched. */
+  target?: string
+  /** What the fields start at: the schema's own defaults, or whatever already
+   *  sits at `target` in the context the run goes against. venapce builds a
+   *  fresh context per run, so `live` has nothing to read and falls back to the
+   *  defaults. */
+  prefill?: 'default' | 'live'
+  /** Refuses a launch that supplies nothing and finds nothing at the target —
+   *  a flow that cannot do anything sensible without its input. */
+  required?: boolean
+}
+
+/** GET /api/flows/:id/entry — one flow's entry form resolved for a launch.
+ *  `entry` is null for a flow that declares none, which is the dialog's cue to
+ *  run it the way it always did rather than an error. */
+export interface FlowEntryView {
+  entry: FlowEntryForm | null
+  target: string
+  prefill: 'default' | 'live'
+  values: Record<string, unknown>
+  /** Where `values` came from: the schema alone, the live context, or neither. */
+  source: 'default' | 'context' | 'none'
+  /** What the previous run of this flow was given, when the engine still holds
+   *  it — venapce's own addition to FloMorphic's view, since a fresh context
+   *  per run means a `live` prefill has nothing to read here. Absent when this
+   *  flow has never been run with values. */
+  last?: FlowEntryLastRun
+}
+
+/** The values one earlier run of a flow was launched with, and enough about
+ *  that run to decide whether to reuse them. */
+export interface FlowEntryLastRun {
+  values: Record<string, unknown>
+  /** The activity that run is recorded as, so it can be read in full. */
+  activityId: number
+  title?: string
+  /** When that run started (ISO). */
+  at?: string
+  subjectKind?: string
+  subjectId?: number
+  /** True when that run was on the very row being launched now — the re-run
+   *  case — and false when the values come from another row's run. */
+  sameSubject: boolean
+}
+
+/** Which control one entry field gets. `text` is a multi-line string, `json` is
+ *  anything the built form cannot draw honestly (a nested object, a tuple) and
+ *  so edits as a JSON document in place. */
+export type EntryFieldKind = 'string' | 'text' | 'number' | 'boolean' | 'enum' | 'string[]' | 'json'
+
+/** One field of a JSON Schema entry form, as `entryFields` reads it out of the
+ *  schema — the flow's own declaration, in the terms this app's controls use. */
+export interface EntryField {
+  name: string
+  label: string
+  description?: string
+  kind: EntryFieldKind
+  /** The declared `enum`, for the one-of control. */
+  options?: unknown[]
+  required: boolean
+  default?: unknown
+  secret?: boolean
+  /** The `<input type>` the declared `format` deserves, when a browser helps
+   *  with it (a date picker, an email keyboard). */
+  inputType?: string
 }
 
 /** GET /api/flows/tags — the run picker's operation filter menu: which
@@ -899,8 +1000,20 @@ export interface RunFlowInput {
   subjects?: { kind: SubjectKind; id: number | string }[]
   /** Optional activity title (the flow's title otherwise). */
   title?: string
-  /** Optional extra input, handed to the flow as $.input. */
+  /** Optional extra input, handed to the flow as $.input.
+   *
+   *  Nothing declares that slot and nothing validates what lands in it, so the
+   *  run dialog no longer offers it: a flow states the input it needs and
+   *  `entry` below is how that is filled in. The field stays for an API caller
+   *  and for the operations path, which builds its own `$.input.params`. */
   input?: unknown
+  /** The answers to the flow's own entry form (see {@link FlowEntryView}).
+   *  Unlike `input`, these are not part of the context document venapce
+   *  builds: FloMorphic validates them against the flow's schema and seeds
+   *  them at the one path the entry names, so a flow reads them where its
+   *  designer said they would be. One form, N subjects — every run started by
+   *  the call is seeded with the same values. */
+  entry?: Record<string, unknown>
 }
 
 export interface RunFlowResult {
@@ -1015,6 +1128,11 @@ export interface OperationFlowState extends OperationFlowSpec {
   missingActions?: { action: string; plugin: string; repo?: string; nodes?: string[] }[]
   /** The compile check's error at install time, if any (advisory). */
   compileError?: string
+  /** Plugin nodes FloMorphic kept but would not bind: more than one of its
+   *  plugins serves their action, so binding one would have been a guess
+   *  (reported by the import itself). Each waits for a pick in the node's
+   *  drawer on the flow page. */
+  unboundNodes?: { ref: string; title?: string; action: string; plugin?: string; choices: string[]; withheld?: boolean }[]
   /** Last run of this flow started from the operation, with the error ledger it
    *  recorded — a flow carries on past a node error, so `status` alone cannot
    *  say that it finished having hit things. */
@@ -1228,4 +1346,69 @@ export interface PackInput {
   flows: PackFlowInput[]
   readme?: string
   requires?: OperationRequires
+}
+
+// ---- preferences: export / import ----
+// The configuration an operator BUILDS — the charts, the dashboards they sit
+// on and the saved views — as one JSON file, so a second install starts where
+// this one got to.
+//
+// Deliberately NOT in it: the pipeline rows (stage, findings, issues,
+// activities) and the Superset / osctrl / FloMorphic credentials, which are
+// encrypted per appliance and unreadable by the next install anyway. See
+// venapce-api/internal/httpapi/preferences.go for the reasoning.
+
+/** The sections a preferences file can carry, in the order an import applies
+ *  them — a dashboard needs its charts first. */
+export type PreferencesSection = 'charts' | 'dashboards' | 'views'
+
+export const PREFERENCES_SECTIONS: PreferencesSection[] = ['charts', 'dashboards', 'views']
+
+/**
+ * A preferences file. Every section is optional, and an ABSENT section is
+ * different from an empty one: "export the charts and nothing else" has to stay
+ * distinguishable from "this install has no charts".
+ *
+ * The shapes are the backend's export shapes, carried through untouched — the
+ * panel reads the file to count and name what is in it, and never rewrites it.
+ */
+export interface PreferencesBundle {
+  kind?: string
+  version?: number
+  exportedAt?: string
+  appVersion?: string
+  label?: string
+  charts?: unknown[]
+  dashboards?: unknown[]
+  views?: unknown[]
+}
+
+/**
+ * What happens to something that is already here.
+ *
+ *   merge  update it from the file — the file wins
+ *   add    leave it alone and count it skipped — the install wins
+ *
+ * Nothing is ever deleted by an import.
+ */
+export type PreferencesImportMode = 'merge' | 'add'
+
+export interface PreferencesSectionReport {
+  name: PreferencesSection
+  created: number
+  updated: number
+  skipped: number
+}
+
+/** The import's answer, and what a dry run answers without writing. */
+export interface PreferencesReport {
+  dryRun: boolean
+  mode: PreferencesImportMode
+  sections: PreferencesSectionReport[]
+  created: number
+  updated: number
+  skipped: number
+  /** Per-item problems that did not stop the import: a view with no tags, a
+   *  dashboard cell whose chart was not in the file. */
+  notes: string[]
 }

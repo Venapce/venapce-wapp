@@ -15,6 +15,21 @@ export function relativeTime(iso?: string): string {
   return `${d}d ago`
 }
 
+/** The same instant spelled out, for the tooltip beside a relative one —
+ *  "6m ago" is the quick read, this is the one someone can act on. */
+export function absoluteTime(iso?: string): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return String(iso)
+  return d.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 /** A node is "online" if osctrl saw it within the last 5 minutes. */
 export function isOnline(lastSeen?: string): boolean {
   if (!lastSeen) return false
