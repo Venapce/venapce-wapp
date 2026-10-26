@@ -256,13 +256,18 @@ export interface FlomorphicSettingsView {
   jwtSecretSet?: boolean
   /** Host infra answers on — NATS :4222 for the plugin, osspace :8022 for osctrl. */
   infraHost?: string
-  /** Where the FloMorphic web panel answers in a browser — what the "open in
-   *  FloMorphic" links point at. Empty when nobody has said, and those links
-   *  then ask once rather than guess. */
+  /** Where the FloMorphic web app answers in a browser — what every "open in
+   *  FloMorphic" link points at. Its own setting, not part of the API access:
+   *  the backend reaches FloMorphic by container name, the browser by the port
+   *  the FloMorphic compose publishes on the Docker host. Defaults to that
+   *  published port, so it is effectively never empty. */
   panelUrl?: string
   /** True while these come straight from the backend environment (nothing saved
    *  here yet), so the card can label them and offer "reset to environment". */
   apiFromEnv?: boolean
+  /** True while the web app address is still the environment's — tracked apart
+   *  from `apiFromEnv`, since either can be overridden on its own. */
+  panelFromEnv?: boolean
 }
 
 /** Outcome of saving/testing/resetting the FloMorphic access (the .../api routes).
@@ -272,9 +277,10 @@ export interface FlomorphicAccessResult {
   apiUrl?: string
   jwtSecretSet?: boolean
   infraHost?: string
-  /** Where the FloMorphic web panel answers, for the "open in FloMorphic" links. */
+  /** Where the FloMorphic web app answers, for the "open in FloMorphic" links. */
   panelUrl?: string
   apiFromEnv?: boolean
+  panelFromEnv?: boolean
   /** Whether a live probe reached FloMorphic and it accepted the signed token. */
   reachable?: boolean
   /** Why the probe failed (absent when reachable). */

@@ -6,7 +6,7 @@ import { useFlomorphicStore } from '@/stores/flomorphic'
 import { apiErr } from '@/api/venapce'
 import { relativeTime } from '@/lib/format'
 import { renderMarkdown } from '@/lib/markdown'
-import { askPanelBase, openInFlomorphic, panelBase, setLocalPanelBase } from '@/lib/flomorphicLinks'
+import { homeUrl, openInFlomorphic, panelBase } from '@/lib/flomorphicLinks'
 import { runErrors } from '@/lib/runErrors'
 import { ROLE_CLASS, ROLE_ICON, ROLE_LABEL, SCALE_LABEL, describeCron, effectiveParams, flowsByStep, substituteParams } from '@/lib/operations'
 import Icon from '@/components/Icon.vue'
@@ -61,10 +61,11 @@ async function loadPlan() {
   }
 }
 
-// Where the FloMorphic panel is, for every "open in FloMorphic" on this page.
-// It comes from Settings → FloMorphic; until someone sets it there, the link
-// helper asks once and keeps the answer in this browser.
-const panelUrl = ref(panelBase())
+// Where the FloMorphic web app is, for every "open in FloMorphic" on this page.
+// It comes from Settings → FloMorphic web app, which defaults to the port the
+// standard compose publishes — so it always resolves to something, and changing
+// it is a trip to Settings rather than a prompt answered per browser.
+const panelUrl = computed(() => panelBase())
 
 const readme = computed(() => (op.value?.readme ? renderMarkdown(op.value.readme) : ''))
 // Each flow with its last run's error ledger resolved alongside it — the chip,
@@ -213,18 +214,6 @@ async function copyFlowFile(f: OperationFlowState) {
 function openFlow(f: OperationFlowState) {
   if (!f.flowId) return
   openInFlomorphic('flow', f.flowId)
-  panelUrl.value = panelBase()
-}
-function changePanelUrl() {
-  if (!panelUrl.value) {
-    askPanelBase()
-    panelUrl.value = panelBase()
-    return
-  }
-  const v = window.prompt('FloMorphic panel address (Settings → FloMorphic sets it for everyone)', panelUrl.value)
-  if (v === null) return
-  setLocalPanelBase(v)
-  panelUrl.value = panelBase()
 }
 
 function sourceLabel(): string {
@@ -317,9 +306,16 @@ onMounted(() => {
                 <Icon :name="busy === 'relabel' ? 'loader' : 'tag'" :size="12" :class="busy === 'relabel' && 'animate-spin'" />
                 <span class="ml-1">label flows</span>
               </button>
-              <button class="icon-btn-plain ml-auto text-[11px]" :title="panelUrl ? `FloMorphic panel: ${panelUrl}` : 'Set the FloMorphic panel address'" @click="changePanelUrl">
-                <Icon name="external" :size="12" /> <span class="ml-1">{{ panelUrl ? 'panel' : 'set panel address' }}</span>
-              </button>
+              <a
+                v-if="panelUrl"
+                :href="homeUrl(panelUrl)"
+                target="_blank"
+                rel="noopener"
+                class="icon-btn-plain ml-auto text-[11px]"
+                :title="`FloMorphic web app: ${panelUrl} — change it in Settings → FloMorphic web app`"
+              >
+                <Icon name="external" :size="12" /> <span class="ml-1">FloMorphic</span>
+              </a>
             </div>
             <p class="mb-3 text-xs text-fg-muted">
               Each manifest flow becomes a workflow on the FloMorphic canvas. <strong>Install</strong> pushes the file (with your parameters

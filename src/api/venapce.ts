@@ -288,10 +288,28 @@ export class VenapceClient {
     url: string
     jwtSecret?: string
     infraHost?: string
-    /** Where the panel answers in a browser, for the "open in FloMorphic" links. */
-    panelUrl?: string
   }): Promise<FlomorphicAccessResult> {
     const { data } = await this.http.put('/api/settings/flomorphic/api', body)
+    return data
+  }
+  /**
+   * Save where the FloMorphic *web app* answers in a browser — the base every
+   * "open in FloMorphic" link is built from.
+   *
+   * Its own route, not part of the access above, because it addresses a different
+   * client: with everything in containers the backend reaches FloMorphic by its
+   * container name on the compose network, while the browser reaches the port the
+   * FloMorphic compose publishes on the Docker host. Nothing probes it — this
+   * backend cannot reach a browser-side address, so a failure there would say
+   * nothing.
+   */
+  async saveFlomorphicPanelUrl(url: string): Promise<FlomorphicAccessResult> {
+    const { data } = await this.http.put('/api/settings/flomorphic/panel', { url })
+    return data
+  }
+  /** Drop the saved web app address; the backend environment's applies again. */
+  async resetFlomorphicPanelUrl(): Promise<FlomorphicAccessResult> {
+    const { data } = await this.http.post('/api/settings/flomorphic/panel/reset', {})
     return data
   }
   /** Probe FloMorphic without saving — pass values to try, or {} for the live ones. */

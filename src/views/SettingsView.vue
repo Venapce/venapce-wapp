@@ -7,6 +7,7 @@ import { useFlomorphicStore } from '@/stores/flomorphic'
 import SupersetSettingsCard from '@/components/settings/SupersetSettingsCard.vue'
 import DemoDataCard from '@/components/settings/DemoDataCard.vue'
 import FlomorphicSettingsCard from '@/components/settings/FlomorphicSettingsCard.vue'
+import FlomorphicWebAppCard from '@/components/settings/FlomorphicWebAppCard.vue'
 import OsctrlSettingsCard from '@/components/settings/OsctrlSettingsCard.vue'
 import PreferencesCard from '@/components/settings/PreferencesCard.vue'
 
@@ -43,6 +44,12 @@ onMounted(() => {
 
       <!-- Connect FloMorphic (the venapce plugin) → turnkey osctrl space -->
       <FlomorphicSettingsCard />
+
+      <!-- Where FloMorphic answers in a browser. Its own card, not a field on the
+           one above: that address is the API base this container calls, this one is
+           what the operator's browser opens, and in a containerised install the two
+           are never the same. Every "open in FloMorphic" link is built from it. -->
+      <FlomorphicWebAppCard />
 
       <!-- Fleet manager behind the Nodes area -->
       <OsctrlSettingsCard />

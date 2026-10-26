@@ -27,7 +27,7 @@ const editingApi = ref(false)
 const apiSaving = ref(false)
 const apiTesting = ref(false)
 const apiError = ref('')
-const form = ref({ url: '', jwtSecret: '', infraHost: '', panelUrl: '' })
+const form = ref({ url: '', jwtSecret: '', infraHost: '' })
 
 // The infra host is only ever a hostname — a URL pasted here would be built into an
 // unusable nats:// address, so catch it before the round-trip.
@@ -38,7 +38,7 @@ const infraHostError = computed(() =>
 )
 
 function editApi() {
-  form.value = { url: flo.apiUrl, jwtSecret: '', infraHost: flo.infraHost, panelUrl: flo.panelUrl }
+  form.value = { url: flo.apiUrl, jwtSecret: '', infraHost: flo.infraHost }
   apiError.value = ''
   editingApi.value = true
 }
@@ -53,7 +53,6 @@ async function saveApi() {
       url: form.value.url.trim(),
       jwtSecret: form.value.jwtSecret,
       infraHost: form.value.infraHost.trim(),
-      panelUrl: form.value.panelUrl.trim(),
     })
     if (res.reachable) {
       editingApi.value = false
@@ -241,21 +240,13 @@ onMounted(() => {
                 {{ flo.infraHost || 'Not set' }}
               </dd>
             </div>
-            <div class="flex items-baseline justify-between gap-3">
-              <dt class="text-fg-muted" title="Where Venapce's &quot;open in FloMorphic&quot; links point">Panel address</dt>
-              <dd class="min-w-0 truncate font-mono text-xs text-fg" :class="{ 'text-fg-subtle italic': !flo.panelUrl }">
-                <a v-if="flo.panelUrl" :href="flo.panelUrl" target="_blank" rel="noopener" class="hover:text-accent">{{ flo.panelUrl }}</a>
-                <template v-else>Not set — links ask once</template>
-              </dd>
-            </div>
           </dl>
 
           <p class="mt-3 text-xs text-fg-subtle">
             <template v-if="flo.apiFromEnv">
               From the backend environment (<span class="font-mono">FLOMORPHIC_URL</span>,
               <span class="font-mono">FLOMORPHIC_JWT_SECRET</span>,
-              <span class="font-mono">INFRA_HOST</span>,
-              <span class="font-mono">FLOMORPHIC_PANEL_URL</span>). Set them here instead to change them
+              <span class="font-mono">INFRA_HOST</span>). Set them here instead to change them
               without recreating the container.
             </template>
             <template v-else>
@@ -330,16 +321,12 @@ onMounted(() => {
             </p>
           </div>
 
-          <div>
-            <label class="label">FloMorphic panel address</label>
-            <input v-model="form.panelUrl" class="field" placeholder="http://localhost:8027" autocomplete="off" />
-            <p class="mt-1 text-xs text-fg-subtle">
-              As reached from <em>your browser</em>, not from this container — often a different host name than the API URL
-              above. Venapce never calls it: it is where every "open in FloMorphic" link goes, so an operator reading a run's
-              outcome here can open the flow, the run list or the context document that produced it. Leave it blank and those
-              links ask for the address once instead.
-            </p>
-          </div>
+          <p class="text-xs text-fg-subtle">
+            This is the address <em>this container</em> calls, so FloMorphic's container name belongs
+            here. Where <em>your browser</em> reaches its web app — the address every "open in
+            FloMorphic" link uses — is the
+            <span class="font-medium text-fg-muted">FloMorphic web app</span> card below.
+          </p>
 
           <p v-if="apiError" class="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{{ apiError }}</p>
 

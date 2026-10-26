@@ -30,11 +30,17 @@ interface State {
   jwtSecretSet: boolean
   /** Host infra answers on (NATS :4222 / osspace :8022). */
   infraHost: string
-  /** Where the FloMorphic web panel answers in a browser — the base every
-   *  "open in FloMorphic" link is built from. Empty when nobody has said. */
+  /** Where the FloMorphic web app answers in a browser — the base every "open
+   *  in FloMorphic" link is built from. Its own setting, not part of the API
+   *  access: the backend reaches FloMorphic by container name, the browser by
+   *  the port its compose publishes. Defaults to that published port, so it is
+   *  effectively never empty. */
   panelUrl: string
   /** True while the access is the backend environment's (nothing saved here). */
   apiFromEnv: boolean
+  /** True while the web app address is still the environment's — tracked apart
+   *  from `apiFromEnv`, since either can be overridden on its own. */
+  panelFromEnv: boolean
   /** Last reachability probe of the FloMorphic API (null until one ran). */
   reachable: boolean | null
   reachError: string
@@ -61,6 +67,7 @@ export const useFlomorphicStore = defineStore('flomorphic', {
     infraHost: '',
     panelUrl: '',
     apiFromEnv: true,
+    panelFromEnv: true,
     reachable: null,
     reachError: '',
     plugin: null,
@@ -91,8 +98,26 @@ export const useFlomorphicStore = defineStore('flomorphic', {
      * the backend environment. Applies immediately — no container restart — and the
      * response says whether FloMorphic actually answered.
      */
-    async saveAccess(body: { url: string; jwtSecret?: string; infraHost?: string; panelUrl?: string }) {
+    async saveAccess(body: { url: string; jwtSecret?: string; infraHost?: string }) {
       const res = await this.client().saveFlomorphicAccess(body)
+      this.applyAccess(res)
+      return res
+    },
+
+    /**
+     * Save where the FloMorphic web app answers in a browser. Applies at once —
+     * it only moves the target of the links Venapce's own pages render — and
+     * outlives a container recreate, which editing .env does not.
+     */
+    async savePanelUrl(url: string) {
+      const res = await this.client().saveFlomorphicPanelUrl(url)
+      this.applyAccess(res)
+      return res
+    },
+
+    /** Drop the saved web app address; the backend environment's applies again. */
+    async resetPanelUrl() {
+      const res = await this.client().resetFlomorphicPanelUrl()
       this.applyAccess(res)
       return res
     },
@@ -168,8 +193,11 @@ export const useFlomorphicStore = defineStore('flomorphic', {
       this.infraHost = res.infraHost ?? ''
       this.panelUrl = res.panelUrl ?? ''
       this.apiFromEnv = !!res.apiFromEnv
-      this.reachable = res.reachable ?? null
-      this.reachError = res.reachError ?? ''
+      this.panelFromEnv = !!res.panelFromEnv
+      // The panel routes answer with this same view and never probe, so an absent
+      // reachability simply leaves the last API probe as it was.
+      if (res.reachable !== undefined) this.reachable = res.reachable
+      if (res.reachError !== undefined) this.reachError = res.reachError
     },
 
     applyView(view: FlomorphicSettingsView) {
@@ -184,6 +212,7 @@ export const useFlomorphicStore = defineStore('flomorphic', {
       this.infraHost = view.infraHost ?? ''
       this.panelUrl = view.panelUrl ?? ''
       this.apiFromEnv = !!view.apiFromEnv
+      this.panelFromEnv = !!view.panelFromEnv
       this.plugin = view.plugin ?? null
     },
   },

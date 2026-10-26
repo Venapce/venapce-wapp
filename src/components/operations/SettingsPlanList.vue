@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import Icon from '@/components/Icon.vue'
-import { panelBase } from '@/lib/flomorphicLinks'
+import { flowUrl, settingsProfileUrl } from '@/lib/flomorphicLinks'
 import type { OperationSettingsNeed, OperationSettingsPlan, SettingsNeedStatus } from '@/api/types'
 
 // The part of an operation that travels in no package: the plugins its flows
@@ -44,17 +44,13 @@ const needs = computed(() =>
 )
 const pendingPlugins = computed(() => (props.plan.plugins ?? []).filter((p) => p.status === 'notInstalled'))
 
-/** The flow to open for a need: the backend's link when the panel address is
- *  known to it, else this browser's own. */
+/** The flow to open for a need: the backend's link, or one built here from the
+ *  configured web app address. */
 function flowHref(n: OperationSettingsNeed): string {
-  if (n.href) return n.href
-  const base = panelBase()
-  return base && n.flowId ? `${base}/#/workflows/${encodeURIComponent(n.flowId)}` : ''
+  return n.href || (n.flowId ? flowUrl(n.flowId) : '')
 }
 function settingsHref(n: { settingsHref?: string }): string {
-  if (n.settingsHref) return n.settingsHref
-  const base = panelBase()
-  return base ? `${base}/#/node-settings` : ''
+  return n.settingsHref || settingsProfileUrl()
 }
 </script>
 
@@ -142,9 +138,6 @@ function settingsHref(n: { settingsHref?: string }): string {
           </div>
         </li>
       </ul>
-      <p v-if="!plan.panelUrl && !panelBase()" class="mt-1.5 text-[11px] text-warning">
-        Set the FloMorphic panel address (Settings → FloMorphic) and these rows link straight to the flow and to its profiles.
-      </p>
       <p v-if="pendingPlugins.length" class="mt-1.5 text-[11px] text-danger">
         Install {{ pendingPlugins.map((p) => p.name).join(', ') }} in FloMorphic first — a node whose plugin is not here has no profile to
         bind to.
